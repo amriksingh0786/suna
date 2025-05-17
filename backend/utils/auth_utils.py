@@ -2,6 +2,8 @@ from fastapi import HTTPException, Request
 from typing import Optional
 import jwt
 from jwt.exceptions import PyJWTError
+from utils.config import config
+from utils.logger import logger
 
 # This function extracts the user ID from Supabase JWT
 async def get_current_user_id_from_jwt(request: Request) -> str:
@@ -20,9 +22,17 @@ async def get_current_user_id_from_jwt(request: Request) -> str:
     Raises:
         HTTPException: If no valid token is found or if the token is invalid
     """
+    logger.debug("Attempting to get user ID from JWT...")
+    # If authentication is disabled, return the development user ID
+    if config.DISABLE_AUTH:
+        logger.debug(f"Auth is disabled, returning DEV_USER_ID: {config.DEV_USER_ID}")
+        return config.DEV_USER_ID
+        
     auth_header = request.headers.get('Authorization')
+    logger.debug(f"Received Authorization header in Suna backend: {auth_header}")
     
     if not auth_header or not auth_header.startswith('Bearer '):
+        logger.warning("No valid Authorization header found.")
         raise HTTPException(
             status_code=401,
             detail="No valid authentication credentials found",
@@ -34,12 +44,17 @@ async def get_current_user_id_from_jwt(request: Request) -> str:
     try:
         # For Supabase JWT, we just need to decode and extract the user ID
         # The actual validation is handled by Supabase's RLS
+        logger.debug(f"Attempting to decode token: {token}")
         payload = jwt.decode(token, options={"verify_signature": False})
+        logger.debug(f"Token decoded successfully. Payload: {payload}")
         
-        # Supabase stores the user ID in the 'sub' claim
-        user_id = payload.get('sub')
+        # Supabase typically stores the user ID in the 'sub' claim.
+        # Fallback to 'id' claim if 'sub' is not present for compatibility with this specific JWT.
+        user_id = payload.get('sub') or payload.get('id')
+        logger.debug(f"Extracted user_id (tried 'sub', then 'id' claim): {user_id}")
         
         if not user_id:
+            logger.warning("User ID (neither 'sub' nor 'id' claim) not found in token payload.")
             raise HTTPException(
                 status_code=401,
                 detail="Invalid token payload",
@@ -48,7 +63,8 @@ async def get_current_user_id_from_jwt(request: Request) -> str:
         
         return user_id
         
-    except PyJWTError:
+    except PyJWTError as e:
+        logger.error(f"PyJWTError while decoding token: {str(e)}")
         raise HTTPException(
             status_code=401,
             detail="Invalid token",
@@ -113,6 +129,10 @@ async def get_user_id_from_stream_auth(
     Raises:
         HTTPException: If no valid token is found or if the token is invalid
     """
+    # If authentication is disabled, return the development user ID
+    if config.DISABLE_AUTH:
+        return config.DEV_USER_ID
+        
     # Try to get user_id from token in query param (for EventSource which can't set headers)
     if token:
         try:
@@ -159,6 +179,10 @@ async def verify_thread_access(client, thread_id: str, user_id: str):
     Raises:
         HTTPException: If the user doesn't have access to the thread
     """
+    # If authentication is disabled, allow access to all threads
+    if config.DISABLE_AUTH:
+        return True
+        
     # Query the thread to get account information
     thread_result = await client.table('threads').select('*,project_id').eq('thread_id', thread_id).execute()
 
@@ -197,6 +221,10 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
     Returns:
         Optional[str]: The user ID extracted from the JWT, or None if no valid token
     """
+    # If authentication is disabled, return the development user ID
+    if config.DISABLE_AUTH:
+        return config.DEV_USER_ID
+        
     auth_header = request.headers.get('Authorization')
     
     if not auth_header or not auth_header.startswith('Bearer '):

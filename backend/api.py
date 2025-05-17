@@ -18,9 +18,6 @@ from agent import api as agent_api
 from sandbox import api as sandbox_api
 from services import billing as billing_api
 
-# Load environment variables (these will be available through config)
-load_dotenv()
-
 # Initialize managers
 db = DBConnection()
 thread_manager = None

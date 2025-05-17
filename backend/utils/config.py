@@ -158,6 +158,10 @@ class Configuration:
     STRIPE_PRODUCT_ID_PROD: str = 'prod_SCl7AQ2C8kK1CD'  # Production product ID
     STRIPE_PRODUCT_ID_STAGING: str = 'prod_SCgIj3G7yPOAWY'  # Staging product ID
     
+    # Development options
+    DISABLE_AUTH: bool = False  # Set to True to disable authentication (DEVELOPMENT ONLY)
+    DEV_USER_ID: str = "00000000-0000-0000-0000-000000000000"  # Default user ID when auth is disabled
+    
     @property
     def STRIPE_PRODUCT_ID(self) -> str:
         if self.ENV_MODE == EnvMode.STAGING:

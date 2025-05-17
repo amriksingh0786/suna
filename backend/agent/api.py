@@ -632,13 +632,51 @@ async def initiate_agent_with_files(
     stream: Optional[bool] = Form(True),
     enable_context_manager: Optional[bool] = Form(False),
     files: List[UploadFile] = File(default=[]),
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: Optional[str] = Depends(get_current_user_id_from_jwt) 
 ):
+    logger.info(f"Received initiate_agent_with_files request with prompt: {prompt}")
     """Initiate a new agent session with optional file attachments."""
     global instance_id # Ensure instance_id is accessible
     if not instance_id:
         raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
 
+    client = await db.client # Initialize client early
+
+    if user_id:
+        # JIT Account Creation: Check if account exists, create if not
+        try:
+            account_check = await client.table('accounts').select('account_id').eq('account_id', user_id).maybe_single().execute()
+            
+            if not account_check.data:
+                logger.info(f"Suna account not found for user_id {user_id}. Creating new Suna account.")
+                # Potentially extract more details from JWT if needed for 'accounts' table
+                # For now, just user_id (as account_id) and created_at
+                new_account_data = {
+                    'account_id': user_id, 
+                    'created_at': datetime.now(timezone.utc).isoformat()
+                    # Add other fields like 'email', 'name' if your 'accounts' table has them
+                    # and you can extract them from the JWT.
+                }
+                
+                insert_response = await client.table('accounts').insert(new_account_data, returning="representation").execute()
+                if not insert_response.data and hasattr(insert_response, 'error') and insert_response.error:
+                    logger.error(f"Failed to create Suna account for user_id {user_id}. Error: {insert_response.error.message if insert_response.error else 'Unknown error'}")
+                    raise HTTPException(status_code=500, detail=f"Failed to provision Suna account: {insert_response.error.message if insert_response.error else 'Unknown DB error'}")
+                elif not insert_response.data: # Fallback for unexpected non-error empty response
+                    logger.error(f"Failed to create Suna account for user_id {user_id}. No data returned and no explicit error.")
+                    raise HTTPException(status_code=500, detail="Failed to provision Suna account (no data).")
+                logger.info(f"Successfully created Suna account for user_id {user_id}.")
+            else:
+                logger.info(f"Existing Suna account found for user_id {user_id}.")
+        except Exception as e:
+            logger.error(f"Error during JIT Suna account creation/check for user_id {user_id}: {str(e)}\\n{traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error managing Suna account: {str(e)}")
+    elif not config.DISABLE_AUTH: # If auth is not disabled and user_id is None (token was invalid/missing)
+        # This case should ideally be caught by get_current_user_id_from_jwt raising 401
+        # but as a safeguard:
+        logger.warning("initiate_agent_with_files called without user_id and auth is enabled.")
+        raise HTTPException(status_code=401, detail="User ID not found, authentication required.")
+    
     # Use model from config if not specified in the request
     logger.info(f"Original model_name from request: {model_name}")
 
@@ -653,8 +691,8 @@ async def initiate_agent_with_files(
     # Update model_name to use the resolved version
     model_name = resolved_model
 
-    logger.info(f"[\033[91mDEBUG\033[0m] Initiating new agent with prompt and {len(files)} files (Instance: {instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
-    client = await db.client
+    logger.info(f"[\\033[91mDEBUG\\033[0m] Initiating new agent with prompt and {len(files)} files (Instance: {instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
+    # client = await db.client # This line is now redundant as client is initialized above
     account_id = user_id # In Basejump, personal account_id is the same as user_id
     
     can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
@@ -667,6 +705,7 @@ async def initiate_agent_with_files(
 
     try:
         # 1. Create Project
+        logger.info(f"Creating new project with prompt: {prompt}")
         placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
         project = await client.table('projects').insert({
             "project_id": str(uuid.uuid4()), "account_id": account_id, "name": placeholder_name,
