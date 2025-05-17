@@ -15,7 +15,7 @@ from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
 from services import redis
 from agent.run import run_agent
-from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access
+from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access, get_current_user_claims_from_jwt
 from utils.logger import logger
 from services.billing import check_billing_status, can_use_model
 from utils.config import config
@@ -120,7 +120,7 @@ async def cleanup():
 async def stop_agent_run(agent_run_id: str, error_message: Optional[str] = None):
     """Update database and publish stop signal to Redis."""
     logger.info(f"Stopping agent run: {agent_run_id}")
-    client = await db.client
+    supabase_client = await db.client
     final_status = "failed" if error_message else "stopped"
 
     # Attempt to fetch final responses from Redis
@@ -136,7 +136,7 @@ async def stop_agent_run(agent_run_id: str, error_message: Optional[str] = None)
 
     # Update the agent run status in the database
     update_success = await update_agent_run_status(
-        client, agent_run_id, final_status, error=error_message, responses=all_responses
+        supabase_client, agent_run_id, final_status, error=error_message, responses=all_responses
     )
 
     if not update_success:
@@ -308,36 +308,38 @@ async def start_agent(
     model_name = resolved_model
 
     logger.info(f"Starting new agent for thread: {thread_id} with config: model={model_name}, thinking={body.enable_thinking}, effort={body.reasoning_effort}, stream={body.stream}, context_manager={body.enable_context_manager} (Instance: {instance_id})")
-    client = await db.client
+    supabase_client = await db.client
 
-    await verify_thread_access(client, thread_id, user_id)
-    thread_result = await client.table('threads').select('project_id', 'account_id').eq('thread_id', thread_id).execute()
+    await verify_thread_access(supabase_client, thread_id, user_id)
+    thread_result = await supabase_client.table('threads').select('project_id', 'account_id').eq('thread_id', thread_id).execute()
     if not thread_result.data:
         raise HTTPException(status_code=404, detail="Thread not found")
     thread_data = thread_result.data[0]
     project_id = thread_data.get('project_id')
     account_id = thread_data.get('account_id')
 
-    can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
+    supabase_client = await db.client
+    can_use, model_message, allowed_models = await can_use_model(supabase_client, account_id, model_name)
     if not can_use:
         raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
-    can_run, message, subscription = await check_billing_status(client, account_id)
+    supabase_client = await db.client
+    can_run, message, subscription = await check_billing_status(supabase_client, account_id)
     if not can_run:
         raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
 
-    active_run_id = await check_for_active_project_agent_run(client, project_id)
+    active_run_id = await check_for_active_project_agent_run(supabase_client, project_id)
     if active_run_id:
         logger.info(f"Stopping existing agent run {active_run_id} for project {project_id}")
         await stop_agent_run(active_run_id)
 
     try:
-        sandbox, sandbox_id, sandbox_pass = await get_or_create_project_sandbox(client, project_id)
+        sandbox, sandbox_id, sandbox_pass = await get_or_create_project_sandbox(supabase_client, project_id)
     except Exception as e:
         logger.error(f"Failed to get/create sandbox for project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize sandbox: {str(e)}")
 
-    agent_run = await client.table('agent_runs').insert({
+    agent_run = await supabase_client.table('agent_runs').insert({
         "thread_id": thread_id, "status": "running",
         "started_at": datetime.now(timezone.utc).isoformat()
     }).execute()
@@ -367,8 +369,8 @@ async def start_agent(
 async def stop_agent(agent_run_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
     """Stop a running agent."""
     logger.info(f"Received request to stop agent run: {agent_run_id}")
-    client = await db.client
-    await get_agent_run_with_access_check(client, agent_run_id, user_id)
+    supabase_client = await db.client
+    await get_agent_run_with_access_check(supabase_client, agent_run_id, user_id)
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
 
@@ -376,9 +378,9 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(get_current_user_
 async def get_agent_runs(thread_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
     """Get all agent runs for a thread."""
     logger.info(f"Fetching agent runs for thread: {thread_id}")
-    client = await db.client
-    await verify_thread_access(client, thread_id, user_id)
-    agent_runs = await client.table('agent_runs').select('*').eq("thread_id", thread_id).order('created_at', desc=True).execute()
+    supabase_client = await db.client
+    await verify_thread_access(supabase_client, thread_id, user_id)
+    agent_runs = await supabase_client.table('agent_runs').select('*').eq("thread_id", thread_id).order('created_at', desc=True).execute()
     logger.debug(f"Found {len(agent_runs.data)} agent runs for thread: {thread_id}")
     return {"agent_runs": agent_runs.data}
 
@@ -386,8 +388,8 @@ async def get_agent_runs(thread_id: str, user_id: str = Depends(get_current_user
 async def get_agent_run(agent_run_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
     """Get agent run status and responses."""
     logger.info(f"Fetching agent run details: {agent_run_id}")
-    client = await db.client
-    agent_run_data = await get_agent_run_with_access_check(client, agent_run_id, user_id)
+    supabase_client = await db.client
+    agent_run_data = await get_agent_run_with_access_check(supabase_client, agent_run_id, user_id)
     # Note: Responses are not included here by default, they are in the stream or DB
     return {
         "id": agent_run_data['id'],
@@ -406,10 +408,10 @@ async def stream_agent_run(
 ):
     """Stream the responses of an agent run using Redis Lists and Pub/Sub."""
     logger.info(f"Starting stream for agent run: {agent_run_id}")
-    client = await db.client
+    supabase_client = await db.client
 
     user_id = await get_user_id_from_stream_auth(request, token)
-    agent_run_data = await get_agent_run_with_access_check(client, agent_run_id, user_id)
+    agent_run_data = await get_agent_run_with_access_check(supabase_client, agent_run_id, user_id)
 
     response_list_key = f"agent_run:{agent_run_id}:responses"
     response_channel = f"agent_run:{agent_run_id}:new_response"
@@ -437,7 +439,7 @@ async def stream_agent_run(
             initial_yield_complete = True
 
             # 2. Check run status *after* yielding initial data
-            run_status = await client.table('agent_runs').select('status').eq("id", agent_run_id).maybe_single().execute()
+            run_status = await supabase_client.table('agent_runs').select('status').eq("id", agent_run_id).maybe_single().execute()
             current_status = run_status.data.get('status') if run_status.data else None
 
             if current_status != 'running':
@@ -585,8 +587,7 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
     """Generates a project name using an LLM and updates the database."""
     logger.info(f"Starting background task to generate name for project: {project_id}")
     try:
-        db_conn = DBConnection()
-        client = await db_conn.client
+        supabase_client = await db.client
 
         model_name = "openai/gpt-4o-mini"
         system_prompt = "You are a helpful assistant that generates extremely concise titles (2-4 words maximum) for chat threads based on the user's message. Respond with only the title, no other text or punctuation."
@@ -609,7 +610,7 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
             logger.warning(f"Failed to get valid response from LLM for project {project_id} naming. Response: {response}")
 
         if generated_name:
-            update_result = await client.table('projects').update({"name": generated_name}).eq("project_id", project_id).execute()
+            update_result = await supabase_client.table('projects').update({"name": generated_name}).eq("project_id", project_id).execute()
             if hasattr(update_result, 'data') and update_result.data:
                 logger.info(f"Successfully updated project {project_id} name to '{generated_name}'")
             else:
@@ -632,7 +633,7 @@ async def initiate_agent_with_files(
     stream: Optional[bool] = Form(True),
     enable_context_manager: Optional[bool] = Form(False),
     files: List[UploadFile] = File(default=[]),
-    user_id: Optional[str] = Depends(get_current_user_id_from_jwt) 
+    user_claims: Optional[dict] = Depends(get_current_user_claims_from_jwt)
 ):
     logger.info(f"Received initiate_agent_with_files request with prompt: {prompt}")
     """Initiate a new agent session with optional file attachments."""
@@ -640,37 +641,143 @@ async def initiate_agent_with_files(
     if not instance_id:
         raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
 
-    client = await db.client # Initialize client early
+    if not user_claims or not user_claims.get("id"):
+        if not config.DISABLE_AUTH:
+            logger.warning("initiate_agent_with_files called without valid user claims and auth is enabled.")
+            raise HTTPException(status_code=401, detail="User claims not found, authentication required.")
+        else: # Auth disabled, use dev user ID
+            user_id = config.DEV_USER_ID
+            # Create a mock claims dict for dev user if needed downstream, or handle absence
+            user_claims = {"id": user_id, "first_name": "Dev", "last_name": "User", "role": "ADMIN"} 
+            logger.info(f"Auth disabled, using DEV_USER_ID: {user_id} with mock claims.")
+    else:
+        user_id = user_claims.get("id")
+
+    supabase_client = await db.client # Initialize client early
 
     if user_id:
-        # JIT Account Creation: Check if account exists, create if not
+        # JIT User Creation using Supabase Admin Auth
         try:
-            account_check = await client.table('accounts').select('account_id').eq('account_id', user_id).maybe_single().execute()
-            
-            if not account_check.data:
-                logger.info(f"Suna account not found for user_id {user_id}. Creating new Suna account.")
-                # Potentially extract more details from JWT if needed for 'accounts' table
-                # For now, just user_id (as account_id) and created_at
-                new_account_data = {
-                    'account_id': user_id, 
-                    'created_at': datetime.now(timezone.utc).isoformat()
-                    # Add other fields like 'email', 'name' if your 'accounts' table has them
-                    # and you can extract them from the JWT.
+            logger.debug(f"Checking if user {user_id} exists using Supabase admin auth...")
+            existing_user = None
+            try:
+                # Attempt to get the user by ID. This will raise an APIError if not found.
+                supabase_client = await db.client # Get the actual client instance
+                user_response = await supabase_client.auth.admin.get_user_by_id(user_id)
+                existing_user = user_response.user # Access the user object from the response
+                if existing_user:
+                    logger.info(f"User {user_id} already exists in auth.users (ID: {existing_user.id}). Email: {existing_user.email}")
+
+            except Exception as e: # Broad exception to catch GoTrueHTTPError or similar if user not found
+                logger.info(f"User {user_id} not found via get_user_by_id check (error: {type(e).__name__} - {str(e)}). Will attempt to create.")
+                pass # Indicate that we expect this error if user doesn't exist
+
+            if not existing_user:
+                user_email = user_claims.get('email')
+                if not user_email:
+                    logger.error(f"Email claim missing in JWT for user {user_id}. Cannot create user in auth.users.")
+                    raise HTTPException(status_code=400, detail="User email not found in token, cannot provision user.")
+
+                auth_user_params = {
+                    "email": user_email,
+                    "user_metadata": {
+                        'first_name': user_claims.get('first_name'),
+                        'last_name': user_claims.get('last_name'),
+                    },
+                    "app_metadata": {
+                        'role': user_claims.get('role'),
+                        'user_types': user_claims.get('user_types'),
+                        'investor_type': user_claims.get('investor_type'),
+                        'has_x_access': user_claims.get('has_x_access'),
+                    },
+                    "email_confirm": True,
                 }
                 
-                insert_response = await client.table('accounts').insert(new_account_data, returning="representation").execute()
+                auth_user_params["user_metadata"] = {k: v for k, v in auth_user_params["user_metadata"].items() if v is not None}
+                auth_user_params["app_metadata"] = {k: v for k, v in auth_user_params["app_metadata"].items() if v is not None}
+
+                logger.info(f"Creating user {user_id} (Email: {user_email}) in auth.users with admin client.")
+                
+                # We are attempting to set the ID to match the JWT.
+                # If create_user does not honor this, the created_user_response.id will be different.
+                create_user_attributes = {"id": user_id, **auth_user_params}
+
+                supabase_client = await db.client # Get the actual client instance
+                response_object = await supabase_client.auth.admin.create_user(attributes=create_user_attributes)
+                created_user_data = response_object.user # Access the user object from the response
+
+                if created_user_data and created_user_data.id:
+                    logger.info(f"Successfully created user {created_user_data.id} in auth.users. Email: {created_user_data.email}")
+                    if created_user_data.id != user_id:
+                        logger.warning(f"Created user ID ({created_user_data.id}) does not match JWT user ID ({user_id}). This may require linking logic changes.")
+                        # Potentially update user_id variable to the new ID if all downstream Suna logic should use it.
+                        # user_id = created_user_data.id 
+                else:
+                    logger.error(f"Failed to create user {user_id} in auth.users. Response: {response_object}") # Log the whole response object
+                    raise HTTPException(status_code=500, detail="Failed to provision user in auth.users (admin client).")
+        
+        except HTTPException as e: 
+            raise e
+        except Exception as e:
+            logger.error(f"Error during JIT user creation/check with admin auth for user_id {user_id}: {type(e).__name__} - {str(e)}\\n{traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error managing user with admin auth: {str(e)}")
+
+        # JIT Account Creation in basejump.accounts
+        try:
+            # Use count for a more robust check against potential 204 issues with maybe_single()
+            # Assuming the primary key in basejump.accounts is 'id' and it stores the user_id
+            supabase_client = await db.client # Get the actual client instance
+            account_count_response = await supabase_client.schema('basejump').table('accounts').select('id', count='exact').eq('id', user_id).execute()
+            
+            if account_count_response.count == 0:
+                logger.info(f"Suna account (in basejump.accounts) not found for user_id {user_id}. Creating new account.")
+                
+                new_account_data = {
+                    'id': user_id, # Map user_id to the 'id' column in basejump.accounts
+                    'primary_owner_user_id': user_id, # Set primary_owner_user_id to the user's ID
+                    'personal_account': True, # Mark this as a personal account for the user
+                    'created_at': datetime.now(timezone.utc).isoformat()
+                    # 'name': f"User {user_id[:8]}'s Account", # Optional: Add a default name if desired/needed
+                    # Add other mandatory fields for basejump.accounts if any.
+                }
+                
+                supabase_client = await db.client # Get the actual client instance
+                insert_response = await supabase_client.schema('basejump').table('accounts').insert(new_account_data, returning="representation").execute()
                 if not insert_response.data and hasattr(insert_response, 'error') and insert_response.error:
-                    logger.error(f"Failed to create Suna account for user_id {user_id}. Error: {insert_response.error.message if insert_response.error else 'Unknown error'}")
+                    logger.error(f"Failed to create Suna account in basejump.accounts for user_id {user_id}. Error: {insert_response.error.message if insert_response.error else 'Unknown error'}")
                     raise HTTPException(status_code=500, detail=f"Failed to provision Suna account: {insert_response.error.message if insert_response.error else 'Unknown DB error'}")
                 elif not insert_response.data: # Fallback for unexpected non-error empty response
-                    logger.error(f"Failed to create Suna account for user_id {user_id}. No data returned and no explicit error.")
+                    logger.error(f"Failed to create Suna account in basejump.accounts for user_id {user_id}. No data returned and no explicit error.")
                     raise HTTPException(status_code=500, detail="Failed to provision Suna account (no data).")
-                logger.info(f"Successfully created Suna account for user_id {user_id}.")
+                logger.info(f"Successfully created Suna account in basejump.accounts for user_id {user_id}.")
             else:
-                logger.info(f"Existing Suna account found for user_id {user_id}.")
+                logger.info(f"Existing Suna account (in basejump.accounts) found for user_id {user_id}.")
         except Exception as e:
             logger.error(f"Error during JIT Suna account creation/check for user_id {user_id}: {str(e)}\\n{traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Error managing Suna account: {str(e)}")
+
+        # Use model from config if not specified in the request
+        logger.info(f"Original model_name from request: {model_name}")
+
+        if model_name is None:
+            model_name = config.MODEL_TO_USE
+            logger.info(f"Using model from config: {model_name}")
+
+        # Log the model name after alias resolution
+        resolved_model = MODEL_NAME_ALIASES.get(model_name, model_name)
+        logger.info(f"Resolved model name: {resolved_model}")
+
+        # Update model_name to use the resolved version
+        model_name = resolved_model
+
+        logger.info(f"[\\033[91mDEBUG\\033[0m] Initiating new agent with prompt and {len(files)} files (Instance: {instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
+        # supabase_client = await db.client # This line is now redundant as client is initialized above
+        account_id = user_id # In Basejump, personal account_id is the same as user_id
+        
+        supabase_client = await db.client
+        can_use, model_message, allowed_models = await can_use_model(supabase_client, account_id, model_name)
+        if not can_use:
+            raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
     elif not config.DISABLE_AUTH: # If auth is not disabled and user_id is None (token was invalid/missing)
         # This case should ideally be caught by get_current_user_id_from_jwt raising 401
         # but as a safeguard:
@@ -692,14 +799,16 @@ async def initiate_agent_with_files(
     model_name = resolved_model
 
     logger.info(f"[\\033[91mDEBUG\\033[0m] Initiating new agent with prompt and {len(files)} files (Instance: {instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
-    # client = await db.client # This line is now redundant as client is initialized above
+    # supabase_client = await db.client # This line is now redundant as client is initialized above
     account_id = user_id # In Basejump, personal account_id is the same as user_id
     
-    can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
+    supabase_client = await db.client
+    can_use, model_message, allowed_models = await can_use_model(supabase_client, account_id, model_name)
     if not can_use:
         raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
-    can_run, message, subscription = await check_billing_status(client, account_id)
+    supabase_client = await db.client
+    can_run, message, subscription = await check_billing_status(supabase_client, account_id)
     if not can_run:
         raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
 
@@ -707,7 +816,8 @@ async def initiate_agent_with_files(
         # 1. Create Project
         logger.info(f"Creating new project with prompt: {prompt}")
         placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
-        project = await client.table('projects').insert({
+        supabase_client = await db.client
+        project = await supabase_client.table('projects').insert({
             "project_id": str(uuid.uuid4()), "account_id": account_id, "name": placeholder_name,
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
@@ -715,7 +825,8 @@ async def initiate_agent_with_files(
         logger.info(f"Created new project: {project_id}")
 
         # 2. Create Thread
-        thread = await client.table('threads').insert({
+        supabase_client = await db.client
+        thread = await supabase_client.table('threads').insert({
             "thread_id": str(uuid.uuid4()), "project_id": project_id, "account_id": account_id,
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
@@ -726,7 +837,8 @@ async def initiate_agent_with_files(
         asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
 
         # 3. Create Sandbox
-        sandbox, sandbox_id, sandbox_pass = await get_or_create_project_sandbox(client, project_id)
+        supabase_client = await db.client
+        sandbox, sandbox_id, sandbox_pass = await get_or_create_project_sandbox(supabase_client, project_id)
         logger.info(f"Using sandbox {sandbox_id} for new project {project_id}")
 
         # 4. Upload Files to Sandbox (if any)
@@ -790,14 +902,16 @@ async def initiate_agent_with_files(
         # 5. Add initial user message to thread
         message_id = str(uuid.uuid4())
         message_payload = {"role": "user", "content": message_content}
-        await client.table('messages').insert({
+        supabase_client = await db.client
+        await supabase_client.table('messages').insert({
             "message_id": message_id, "thread_id": thread_id, "type": "user",
             "is_llm_message": True, "content": json.dumps(message_payload),
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
 
         # 6. Start Agent Run
-        agent_run = await client.table('agent_runs').insert({
+        supabase_client = await db.client
+        agent_run = await supabase_client.table('agent_runs').insert({
             "thread_id": thread_id, "status": "running",
             "started_at": datetime.now(timezone.utc).isoformat()
         }).execute()
