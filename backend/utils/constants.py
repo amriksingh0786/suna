@@ -105,10 +105,10 @@ MODEL_ACCESS_TIERS = {
 }
 MODEL_NAME_ALIASES = {
     # Short names to full names
-    "sonnet-3.7": "anthropic/claude-3-7-sonnet-latest",
-    "sonnet-3.5": "anthropic/claude-3-5-sonnet-latest",
-    "haiku-3.5": "anthropic/claude-3-5-haiku-latest",
-    "claude-sonnet-4": "anthropic/claude-sonnet-4-20250514",
+    "sonnet-3.7": "openrouter/anthropic/claude-3.7-sonnet",
+    "sonnet-3.5": "openrouter/anthropic/claude-3.5-sonnet",
+    "haiku-3.5": "openrouter/anthropic/claude-3-5-haiku-latest",
+    "claude-sonnet-4": "openrouter/anthropic/claude-sonnet-4",
     # "gpt-4.1": "openai/gpt-4.1-2025-04-14",  # Commented out in constants.py
     "gpt-4o": "openai/gpt-4o",
     "gpt-4.1": "openai/gpt-4.1",

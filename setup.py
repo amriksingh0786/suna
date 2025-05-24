@@ -294,12 +294,12 @@ def collect_llm_api_keys():
                     
                     model_choice = input("Select default model (1-3) or press Enter for claude-3-7-sonnet: ").strip()
                     if not model_choice or model_choice == '1':
-                        model_info['default_model'] = 'anthropic/claude-3-7-sonnet-latest'
+                        model_info['default_model'] = 'openrouter/anthropic/claude-3.7-sonnet'
                     elif model_choice.isdigit() and 1 <= int(model_choice) <= len(model_aliases['ANTHROPIC']):
                         model_info['default_model'] = model_aliases['ANTHROPIC'][int(model_choice) - 1]
                     else:
-                        model_info['default_model'] = 'anthropic/claude-3-7-sonnet-latest'
-                        print_warning(f"Invalid selection, using default: anthropic/claude-3-7-sonnet-latest")
+                        model_info['default_model'] = 'openrouter/anthropic/claude-3.7-sonnet'
+                        print_warning(f"Invalid selection, using default: openrouter/anthropic/claude-3.7-sonnet")
                     break
                 print_error("Invalid API key format. It should be at least 10 characters long.")
         
