@@ -213,3 +213,80 @@ poetry run python main.py
 ```
 
 All critical issues have been resolved and the system should now operate without the previously encountered errors.
+
+## AWS Bedrock Integration
+
+This backend has been configured to use **AWS Bedrock** instead of direct Anthropic API calls for Claude models. This provides better cost management, regional availability, and enterprise features.
+
+### Bedrock Configuration
+
+The system automatically routes Claude models through AWS Bedrock:
+
+- **Claude 3.7 Sonnet**: Uses Bedrock inference profile for optimized performance
+- **Claude Sonnet 4**: Uses Bedrock inference profile for optimized performance
+- **Claude 3.5 Sonnet**: Uses direct Bedrock model access
+- **Claude 3.5 Haiku**: Uses direct Bedrock model access
+
+### Required Environment Variables
+
+Add these to your `.env` file:
+
+```bash
+# AWS Bedrock Configuration
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_REGION_NAME=us-west-2
+
+# Model Configuration (now uses Bedrock)
+MODEL_TO_USE=bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0
+```
+
+### Testing Bedrock Configuration
+
+Run the Bedrock configuration test:
+
+```bash
+poetry run python test_bedrock_config.py
+```
+
+This will verify:
+
+- ✅ AWS credentials are configured
+- ✅ Model configurations are valid
+- ✅ Model aliases work correctly
+- ✅ API calls function properly
+
+### Model Routing
+
+All Claude model references are automatically routed through Bedrock:
+
+| Frontend Reference | Backend Model                                       | Bedrock Model ID      |
+| ------------------ | --------------------------------------------------- | --------------------- |
+| `claude-3.7`       | `bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0` | Inference Profile ARN |
+| `claude-sonnet-4`  | `bedrock/anthropic.claude-sonnet-4-20250514-v1:0`   | Inference Profile ARN |
+| `claude-3.5`       | `bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0` | Direct Model ID       |
+| `claude-haiku`     | `bedrock/anthropic.claude-3-5-haiku-20241022-v1:0`  | Direct Model ID       |
+
+### Benefits of Bedrock Integration
+
+1. **Cost Optimization**: Potentially lower costs compared to direct API calls
+2. **Regional Deployment**: Better latency with regional model deployments
+3. **Enterprise Features**: Enhanced security, compliance, and monitoring
+4. **Unified Billing**: Single AWS bill for all AI services
+5. **Rate Limits**: Higher throughput and more predictable rate limits
+
+### Troubleshooting Bedrock
+
+If you encounter Bedrock-related issues:
+
+1. **Check credentials**: Ensure AWS credentials have Bedrock permissions
+2. **Verify region**: Models must be available in your configured region
+3. **Model access**: Request access to Claude models in AWS Bedrock console
+4. **Test configuration**: Run `python test_bedrock_config.py`
+
+### Migration Notes
+
+- ✅ **No code changes required** in frontend or agent logic
+- ✅ **Automatic model routing** handles the transition
+- ✅ **Backward compatibility** maintained for existing projects
+- ✅ **Enhanced error handling** for Bedrock-specific issues

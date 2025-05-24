@@ -33,7 +33,7 @@ async def run_agent(
     thread_manager: Optional[ThreadManager] = None,
     native_max_auto_continues: int = 25,
     max_iterations: int = 100,
-    model_name: str = "anthropic/claude-3-7-sonnet-latest",
+    model_name: str = "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = 'low',
     enable_context_manager: bool = True

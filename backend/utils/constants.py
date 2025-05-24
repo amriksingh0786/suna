@@ -12,8 +12,8 @@ MODEL_ACCESS_TIERS = {
         # "xai/grok-3-fast-latest",
         "openrouter/google/gemini-2.5-flash-preview-05-20",  # Added
         # "openai/gpt-4",
-        "anthropic/claude-3-7-sonnet-latest",
-        "anthropic/claude-sonnet-4-20250514",
+        "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",  # Changed to Bedrock
+        "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",   # Changed to Bedrock
         # "openai/gpt-4.1-2025-04-14",
         # "openrouter/deepseek/deepseek-r1",
         "openrouter/qwen/qwen3-235b-a22b",
@@ -26,8 +26,8 @@ MODEL_ACCESS_TIERS = {
         # "xai/grok-3-fast-latest",
         "openrouter/google/gemini-2.5-flash-preview-05-20",  # Added
         # "openai/gpt-4",
-        "anthropic/claude-3-7-sonnet-latest",
-        "anthropic/claude-sonnet-4-20250514",
+        "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",  # Changed to Bedrock
+        "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",   # Changed to Bedrock
         # "openai/gpt-4.1-2025-04-14",
         # "openrouter/deepseek/deepseek-r1",
         "openrouter/qwen/qwen3-235b-a22b",
@@ -40,8 +40,8 @@ MODEL_ACCESS_TIERS = {
         # "xai/grok-3-fast-latest",
         "openrouter/google/gemini-2.5-flash-preview-05-20",  # Added
         # "openai/gpt-4",
-        "anthropic/claude-3-7-sonnet-latest",
-        "anthropic/claude-sonnet-4-20250514",
+        "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",  # Changed to Bedrock
+        "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",   # Changed to Bedrock
         # "openai/gpt-4.1-2025-04-14",
         # "openrouter/deepseek/deepseek-r1",
         "openrouter/qwen/qwen3-235b-a22b",
@@ -54,8 +54,8 @@ MODEL_ACCESS_TIERS = {
         # "xai/grok-3-fast-latest",
         "openrouter/google/gemini-2.5-flash-preview-05-20",  # Added
         # "openai/gpt-4",
-        "anthropic/claude-3-7-sonnet-latest",
-        "anthropic/claude-sonnet-4-20250514",
+        "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",  # Changed to Bedrock
+        "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",   # Changed to Bedrock
         # "openai/gpt-4.1-2025-04-14",
         # "openrouter/deepseek/deepseek-r1",
         "openrouter/qwen/qwen3-235b-a22b",
@@ -68,8 +68,8 @@ MODEL_ACCESS_TIERS = {
         # "xai/grok-3-fast-latest",
         "openrouter/google/gemini-2.5-flash-preview-05-20",  # Added
         # "openai/gpt-4",
-        "anthropic/claude-3-7-sonnet-latest",
-        "anthropic/claude-sonnet-4-20250514",
+        "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",  # Changed to Bedrock
+        "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",   # Changed to Bedrock
         # "openai/gpt-4.1-2025-04-14",
         # "openrouter/deepseek/deepseek-r1",
         "openrouter/qwen/qwen3-235b-a22b",
@@ -82,8 +82,8 @@ MODEL_ACCESS_TIERS = {
         # "xai/grok-3-fast-latest",
         "openrouter/google/gemini-2.5-flash-preview-05-20",  # Added
         # "openai/gpt-4",
-        "anthropic/claude-3-7-sonnet-latest",
-        "anthropic/claude-sonnet-4-20250514",
+        "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",  # Changed to Bedrock
+        "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",   # Changed to Bedrock
         # "openai/gpt-4.1-2025-04-14",
         # "openrouter/deepseek/deepseek-r1",
         "openrouter/qwen/qwen3-235b-a22b",
@@ -96,19 +96,19 @@ MODEL_ACCESS_TIERS = {
         # "xai/grok-3-fast-latest",
         "openrouter/google/gemini-2.5-flash-preview-05-20",  # Added
         # "openai/gpt-4",
-        "anthropic/claude-3-7-sonnet-latest",
-        "anthropic/claude-sonnet-4-20250514",
+        "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",  # Changed to Bedrock
+        "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",   # Changed to Bedrock
         # "openai/gpt-4.1-2025-04-14",
         # "openrouter/deepseek/deepseek-r1",
         "openrouter/qwen/qwen3-235b-a22b",
     ],
 }
 MODEL_NAME_ALIASES = {
-    # Short names to full names
-    "sonnet-3.7": "anthropic/claude-3-7-sonnet-latest",
-    "sonnet-3.5": "anthropic/claude-3-5-sonnet-latest",
-    "haiku-3.5": "anthropic/claude-3-5-haiku-latest",
-    "claude-sonnet-4": "anthropic/claude-sonnet-4-20250514",
+    # Short names to full names - now routing Claude through Bedrock
+    "sonnet-3.7": "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
+    "sonnet-3.5": "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "haiku-3.5": "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+    "claude-sonnet-4": "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
     # "gpt-4.1": "openai/gpt-4.1-2025-04-14",  # Commented out in constants.py
     "gpt-4o": "openai/gpt-4o",
     "gpt-4.1": "openai/gpt-4.1",
