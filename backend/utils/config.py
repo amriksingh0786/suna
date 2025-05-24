@@ -161,6 +161,8 @@ class Configuration:
     # Sandbox configuration
     SANDBOX_IMAGE_NAME = "kortix/suna:0.1.2.8"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
+    SANDBOX_CREATION_TIMEOUT: int = 180  # 3 minutes default timeout
+    SANDBOX_MAX_RETRIES: int = 2  # Maximum retry attempts for sandbox creation
 
     @property
     def STRIPE_PRODUCT_ID(self) -> str:

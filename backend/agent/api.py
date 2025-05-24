@@ -21,7 +21,7 @@ from services.billing import check_billing_status, can_use_model
 from utils.config import config
 from sandbox.sandbox import create_sandbox, get_or_start_sandbox
 from services.llm import make_llm_api_call
-from run_agent_background import run_agent_background, _cleanup_redis_response_list, update_agent_run_status
+from run_agent_background import run_agent_task, _cleanup_redis_response_list, update_agent_run_status
 from utils.constants import MODEL_NAME_ALIASES
 # Initialize shared resources
 router = APIRouter()
@@ -294,12 +294,17 @@ async def start_agent(
         logger.warning(f"Failed to register agent run in Redis ({instance_key}): {str(e)}")
 
     # Run the agent in the background
-    run_agent_background.send(
-        agent_run_id=agent_run_id, thread_id=thread_id, instance_id=instance_id,
+    run_agent_task.send(
         project_id=project_id,
-        model_name=model_name,  # Already resolved above
-        enable_thinking=body.enable_thinking, reasoning_effort=body.reasoning_effort,
-        stream=body.stream, enable_context_manager=body.enable_context_manager
+        user_id=user_id,
+        agent_run_id=agent_run_id, 
+        thread_id=thread_id, 
+        prompt="",  # Empty for start_agent - will get context from thread
+        model_name=model_name,
+        enable_thinking=body.enable_thinking, 
+        reasoning_effort=body.reasoning_effort,
+        stream=body.stream, 
+        enable_context_manager=body.enable_context_manager
     )
 
     return {"agent_run_id": agent_run_id, "status": "running"}
@@ -629,9 +634,40 @@ async def initiate_agent_with_files(
 
         # 3. Create Sandbox
         sandbox_pass = str(uuid.uuid4())
-        sandbox = create_sandbox(sandbox_pass, project_id)
-        sandbox_id = sandbox.id
-        logger.info(f"Created new sandbox {sandbox_id} for project {project_id}")
+        sandbox = None
+        sandbox_id = None
+        
+        try:
+            logger.info(f"Starting sandbox creation for project {project_id}")
+            sandbox = create_sandbox(sandbox_pass, project_id)
+            sandbox_id = sandbox.id
+            logger.info(f"Successfully created sandbox {sandbox_id} for project {project_id}")
+        except Exception as sandbox_error:
+            logger.error(f"Failed to create sandbox for project {project_id}: {str(sandbox_error)}")
+            
+            # Check if this is a timeout error
+            if "timeout" in str(sandbox_error).lower() or "TimeoutError" in str(type(sandbox_error).__name__):
+                error_msg = "Sandbox creation timed out. This may be due to high server load. Please try again in a few minutes."
+            else:
+                error_msg = f"Failed to create sandbox environment: {str(sandbox_error)}"
+            
+            # Clean up project and thread since sandbox creation failed
+            try:
+                await client.table('threads').delete().eq('thread_id', thread_id).execute()
+                await client.table('projects').delete().eq('project_id', project_id).execute()
+                logger.info(f"Cleaned up project {project_id} and thread {thread_id} after sandbox failure")
+            except Exception as cleanup_error:
+                logger.error(f"Failed to clean up after sandbox creation failure: {cleanup_error}")
+            
+            raise HTTPException(
+                status_code=503, 
+                detail={
+                    "error": "sandbox_creation_failed",
+                    "message": error_msg,
+                    "retry_suggested": True,
+                    "details": str(sandbox_error)
+                }
+            )
 
         # Get preview links
         vnc_link = sandbox.get_preview_link(6080)
@@ -738,12 +774,17 @@ async def initiate_agent_with_files(
             logger.warning(f"Failed to register agent run in Redis ({instance_key}): {str(e)}")
 
         # Run agent in background
-        run_agent_background.send(
-            agent_run_id=agent_run_id, thread_id=thread_id, instance_id=instance_id,
+        run_agent_task.send(
             project_id=project_id,
-            model_name=model_name,  # Already resolved above
-            enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
-            stream=stream, enable_context_manager=enable_context_manager
+            user_id=user_id,
+            agent_run_id=agent_run_id, 
+            thread_id=thread_id, 
+            prompt=message_content,  # Use the message_content which includes files
+            model_name=model_name,
+            enable_thinking=enable_thinking, 
+            reasoning_effort=reasoning_effort,
+            stream=stream, 
+            enable_context_manager=enable_context_manager
         )
 
         return {"thread_id": thread_id, "agent_run_id": agent_run_id}

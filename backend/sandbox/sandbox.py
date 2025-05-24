@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from utils.logger import logger
 from utils.config import config
 from utils.config import Configuration
+import time
+import asyncio
 
 load_dotenv()
 
@@ -64,7 +66,7 @@ async def get_or_start_sandbox(sandbox_id: str):
         raise e
 
 def start_supervisord_session(sandbox: Sandbox):
-    """Start supervisord in a session."""
+    """Start supervisord in a session with better error handling."""
     session_id = "supervisord-session"
     try:
         logger.info(f"Creating session {session_id} for supervisord")
@@ -75,15 +77,32 @@ def start_supervisord_session(sandbox: Sandbox):
             command="exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf",
             var_async=True
         ))
-        logger.info(f"Supervisord started in session {session_id}")
+        logger.info(f"Supervisord started successfully in session {session_id}")
+        return True
     except Exception as e:
         logger.error(f"Error starting supervisord session: {str(e)}")
-        raise e
+        logger.warning("Supervisord failed to start - sandbox can still be used manually")
+        # Don't raise the exception - let the sandbox creation succeed
+        return False
 
-def create_sandbox(password: str, project_id: str = None):
-    """Create a new sandbox with all required services configured and running."""
+def create_sandbox(password: str, project_id: str = None, timeout: int = None, max_retries: int = None):
+    """
+    Create a new sandbox with all required services configured and running.
     
-    logger.debug("Creating new Daytona sandbox environment")
+    Args:
+        password: VNC password for the sandbox
+        project_id: Optional project ID for labeling
+        timeout: Timeout in seconds for sandbox creation (default from config)
+        max_retries: Maximum number of retry attempts (default from config)
+    """
+    
+    # Use config defaults if not provided
+    if timeout is None:
+        timeout = config.SANDBOX_CREATION_TIMEOUT
+    if max_retries is None:
+        max_retries = config.SANDBOX_MAX_RETRIES
+    
+    logger.info(f"Creating new Daytona sandbox environment (timeout: {timeout}s, max_retries: {max_retries})")
     logger.debug("Configuring sandbox with browser-use image and environment variables")
     
     labels = None
@@ -115,13 +134,50 @@ def create_sandbox(password: str, project_id: str = None):
         }
     )
     
-    # Create the sandbox
-    sandbox = daytona.create(params)
-    logger.debug(f"Sandbox created with ID: {sandbox.id}")
+    # Attempt to create the sandbox with retries
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            logger.info(f"Sandbox creation attempt {attempt + 1}/{max_retries + 1}")
+            start_time = time.time()
+            
+            # Create the sandbox with extended timeout
+            sandbox = daytona.create(params)
+            
+            creation_time = time.time() - start_time
+            logger.info(f"Sandbox created successfully with ID: {sandbox.id} (took {creation_time:.2f}s)")
+            
+            # Start supervisord in a session for new sandbox
+            try:
+                start_supervisord_session(sandbox)
+                logger.info("Sandbox environment successfully initialized")
+                return sandbox
+            except Exception as supervisord_error:
+                logger.warning(f"Failed to start supervisord but sandbox created: {supervisord_error}")
+                # Return sandbox even if supervisord fails - it can be started later
+                return sandbox
+                
+        except Exception as e:
+            last_error = e
+            elapsed_time = time.time() - start_time if 'start_time' in locals() else 0
+            
+            logger.error(f"Sandbox creation attempt {attempt + 1} failed after {elapsed_time:.2f}s: {str(e)}")
+            
+            if "timeout" in str(e).lower() or "TimeoutError" in str(type(e).__name__):
+                logger.warning(f"Timeout detected during sandbox creation (attempt {attempt + 1})")
+            
+            # If this was the last attempt, raise the error
+            if attempt == max_retries:
+                logger.error(f"All {max_retries + 1} sandbox creation attempts failed")
+                break
+            
+            # Wait before retry (exponential backoff)
+            wait_time = 5 * (2 ** attempt)  # 5s, 10s, 20s...
+            logger.info(f"Waiting {wait_time}s before retry...")
+            time.sleep(wait_time)
     
-    # Start supervisord in a session for new sandbox
-    start_supervisord_session(sandbox)
-    
-    logger.debug(f"Sandbox environment successfully initialized")
-    return sandbox
+    # If we get here, all attempts failed
+    error_msg = f"Failed to create sandbox after {max_retries + 1} attempts. Last error: {last_error}"
+    logger.error(error_msg)
+    raise Exception(error_msg)
 

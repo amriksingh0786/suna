@@ -7,6 +7,7 @@ from services import redis
 from agent.run import run_agent
 from utils.logger import logger
 import dramatiq
+from dramatiq.middleware import AsyncIO
 import uuid
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
@@ -16,8 +17,22 @@ import os
 
 rabbitmq_host = os.getenv('RABBITMQ_HOST', 'rabbitmq')
 rabbitmq_port = int(os.getenv('RABBITMQ_PORT', 5672))
-rabbitmq_broker = RabbitmqBroker(host=rabbitmq_host, port=rabbitmq_port, middleware=[dramatiq.middleware.AsyncIO()])
+
+# Configure RabbitmqBroker with AsyncIO middleware for async functions
+rabbitmq_broker = RabbitmqBroker(
+    host=rabbitmq_host, 
+    port=rabbitmq_port, 
+    middleware=[
+        AsyncIO(),  # Required for async functions
+        dramatiq.middleware.Retries(max_retries=3)
+    ]
+)
+
+# Set the broker for dramatiq
 dramatiq.set_broker(rabbitmq_broker)
+
+# Now we can use a specific queue name for our tasks
+AGENT_QUEUE_NAME = "agent_tasks"
 
 _initialized = False
 db = DBConnection()
@@ -42,19 +57,38 @@ async def initialize():
     logger.info(f"Initialized agent API with instance ID: {instance_id}")
 
 
-@dramatiq.actor
-async def run_agent_background(
+@dramatiq.actor(queue_name=AGENT_QUEUE_NAME)
+async def run_agent_task(
+    project_id: str,
+    user_id: str, 
     agent_run_id: str,
     thread_id: str,
-    instance_id: str, # Use the global instance ID passed during initialization
-    project_id: str,
-    model_name: str,
-    enable_thinking: Optional[bool],
-    reasoning_effort: Optional[str],
-    stream: bool,
-    enable_context_manager: bool
+    prompt: str,
+    model_name: str = None,
+    enable_thinking: bool = False,
+    reasoning_effort: str = 'low',
+    stream: bool = True,
+    enable_context_manager: bool = False,
+    file_contents: list = None,
+    sandbox_id: str = None
 ):
-    """Run the agent in the background using Redis for state."""
+    """
+    Background task to run the agent with proper error handling and logging.
+    
+    Args:
+        project_id: The project ID
+        user_id: The user ID
+        agent_run_id: The agent run ID for tracking
+        thread_id: The thread ID for the conversation
+        prompt: The initial prompt for the agent
+        model_name: Optional model name override
+        enable_thinking: Whether to enable thinking mode
+        reasoning_effort: The reasoning effort level
+        stream: Whether to stream responses
+        enable_context_manager: Whether to enable context manager
+        file_contents: Optional list of file contents
+        sandbox_id: Optional sandbox ID to use
+    """
     await initialize()
 
     logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
