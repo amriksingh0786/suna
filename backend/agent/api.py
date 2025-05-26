@@ -22,40 +22,15 @@ from utils.config import config
 from sandbox.sandbox import create_sandbox, get_or_start_sandbox
 from services.llm import make_llm_api_call
 from run_agent_background import run_agent_background, _cleanup_redis_response_list, update_agent_run_status
-
+from utils.constants import MODEL_NAME_ALIASES
 # Initialize shared resources
 router = APIRouter()
-thread_manager = None
 db = None
 instance_id = None # Global instance ID for this backend instance
 
 # TTL for Redis response lists (24 hours)
 REDIS_RESPONSE_LIST_TTL = 3600 * 24
 
-MODEL_NAME_ALIASES = {
-    # Short names to full names
-    "sonnet-3.7": "anthropic/claude-3-7-sonnet-latest",
-    "gpt-4.1": "openai/gpt-4.1-2025-04-14",
-    "gpt-4o": "openai/gpt-4o",
-    "gpt-4-turbo": "openai/gpt-4-turbo",
-    "gpt-4": "openai/gpt-4",
-    "gemini-flash-2.5": "openrouter/google/gemini-2.5-flash-preview",
-    "grok-3": "xai/grok-3-fast-latest",
-    "deepseek": "openrouter/deepseek/deepseek-chat",
-    "grok-3-mini": "xai/grok-3-mini-fast-beta",
-    "qwen3": "openrouter/qwen/qwen3-235b-a22b", 
-
-    # Also include full names as keys to ensure they map to themselves
-    "anthropic/claude-3-7-sonnet-latest": "anthropic/claude-3-7-sonnet-latest",
-    "openai/gpt-4.1-2025-04-14": "openai/gpt-4.1-2025-04-14",
-    "openai/gpt-4o": "openai/gpt-4o",
-    "openai/gpt-4-turbo": "openai/gpt-4-turbo",
-    "openai/gpt-4": "openai/gpt-4",
-    "openrouter/google/gemini-2.5-flash-preview": "openrouter/google/gemini-2.5-flash-preview",
-    "xai/grok-3-fast-latest": "xai/grok-3-fast-latest",
-    "deepseek/deepseek-chat": "openrouter/deepseek/deepseek-chat",
-    "xai/grok-3-mini-fast-beta": "xai/grok-3-mini-fast-beta",
-}
 
 class AgentStartRequest(BaseModel):
     model_name: Optional[str] = None  # Will be set from config.MODEL_TO_USE in the endpoint
@@ -69,13 +44,11 @@ class InitiateAgentResponse(BaseModel):
     agent_run_id: Optional[str] = None
 
 def initialize(
-    _thread_manager: ThreadManager,
     _db: DBConnection,
     _instance_id: str = None
 ):
     """Initialize the agent API with resources from the main API."""
-    global thread_manager, db, instance_id
-    thread_manager = _thread_manager
+    global db, instance_id
     db = _db
 
     # Use provided instance_id or generate a new one
@@ -235,52 +208,6 @@ async def get_agent_run_with_access_check(client, agent_run_id: str, user_id: st
     await verify_thread_access(client, thread_id, user_id)
     return agent_run_data
 
-async def get_or_create_project_sandbox(client, project_id: str):
-    """Get or create a sandbox for a project."""
-    project = await client.table('projects').select('*').eq('project_id', project_id).execute()
-    if not project.data:
-        raise ValueError(f"Project {project_id} not found")
-    project_data = project.data[0]
-
-    if project_data.get('sandbox', {}).get('id'):
-        sandbox_id = project_data['sandbox']['id']
-        sandbox_pass = project_data['sandbox']['pass']
-        logger.info(f"Project {project_id} already has sandbox {sandbox_id}, retrieving it")
-        try:
-            sandbox = await get_or_start_sandbox(sandbox_id)
-            return sandbox, sandbox_id, sandbox_pass
-        except Exception as e:
-            logger.error(f"Failed to retrieve existing sandbox {sandbox_id}: {str(e)}. Creating a new one.")
-
-    logger.info(f"Creating new sandbox for project {project_id}")
-    sandbox_pass = str(uuid.uuid4())
-    sandbox = create_sandbox(sandbox_pass, project_id)
-    sandbox_id = sandbox.id
-    logger.info(f"Created new sandbox {sandbox_id}")
-
-    vnc_link = sandbox.get_preview_link(6080)
-    website_link = sandbox.get_preview_link(8080)
-    vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link).split("url='")[1].split("'")[0]
-    website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
-    token = None
-    if hasattr(vnc_link, 'token'):
-        token = vnc_link.token
-    elif "token='" in str(vnc_link):
-        token = str(vnc_link).split("token='")[1].split("'")[0]
-
-    update_result = await client.table('projects').update({
-        'sandbox': {
-            'id': sandbox_id, 'pass': sandbox_pass, 'vnc_preview': vnc_url,
-            'sandbox_url': website_url, 'token': token
-        }
-    }).eq('project_id', project_id).execute()
-
-    if not update_result.data:
-        logger.error(f"Failed to update project {project_id} with new sandbox {sandbox_id}")
-        raise Exception("Database update failed")
-
-    return sandbox, sandbox_id, sandbox_pass
-
 @router.post("/thread/{thread_id}/agent/start")
 async def start_agent(
     thread_id: str,
@@ -334,9 +261,21 @@ async def start_agent(
         await stop_agent_run(active_run_id)
 
     try:
-        sandbox, sandbox_id, sandbox_pass = await get_or_create_project_sandbox(supabase_client, project_id)
+        # Get project data to find sandbox ID
+        project_result = await supabase_client.table('projects').select('*').eq('project_id', project_id).execute()
+        if not project_result.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project_data = project_result.data[0]
+        sandbox_info = project_data.get('sandbox', {})
+        if not sandbox_info.get('id'):
+            raise HTTPException(status_code=404, detail="No sandbox found for this project")
+            
+        sandbox_id = sandbox_info['id']
+        sandbox = await get_or_start_sandbox(sandbox_id)
+        logger.info(f"Successfully started sandbox {sandbox_id} for project {project_id}")
     except Exception as e:
-        logger.error(f"Failed to get/create sandbox for project {project_id}: {str(e)}")
+        logger.error(f"Failed to start sandbox for project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize sandbox: {str(e)}")
 
     agent_run = await supabase_client.table('agent_runs').insert({
@@ -362,7 +301,6 @@ async def start_agent(
         stream=body.stream, enable_context_manager=body.enable_context_manager
     )
 
-    # Set a callback to clean up Redis instance key when task is done
     return {"agent_run_id": agent_run_id, "status": "running"}
 
 @router.post("/agent-run/{agent_run_id}/stop")
@@ -837,9 +775,34 @@ async def initiate_agent_with_files(
         asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
 
         # 3. Create Sandbox
-        supabase_client = await db.client
-        sandbox, sandbox_id, sandbox_pass = await get_or_create_project_sandbox(supabase_client, project_id)
-        logger.info(f"Using sandbox {sandbox_id} for new project {project_id}")
+        logger.info(f"Creating new sandbox for project: {project_id}")
+        sandbox_pass = str(uuid.uuid4())
+        sandbox = create_sandbox(sandbox_pass, project_id)
+        sandbox_id = sandbox.id
+        logger.info(f"Created new sandbox {sandbox_id} for project {project_id}")
+
+        # Get preview links
+        vnc_link = sandbox.get_preview_link(6080)
+        website_link = sandbox.get_preview_link(8080)
+        vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link).split("url='")[1].split("'")[0]
+        website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
+        token = None
+        if hasattr(vnc_link, 'token'):
+            token = vnc_link.token
+        elif "token='" in str(vnc_link):
+            token = str(vnc_link).split("token='")[1].split("'")[0]
+
+        # Update project with sandbox info
+        update_result = await supabase_client.table('projects').update({
+            'sandbox': {
+                'id': sandbox_id, 'pass': sandbox_pass, 'vnc_preview': vnc_url,
+                'sandbox_url': website_url, 'token': token
+            }
+        }).eq('project_id', project_id).execute()
+
+        if not update_result.data:
+            logger.error(f"Failed to update project {project_id} with new sandbox {sandbox_id}")
+            raise Exception("Database update failed")
 
         # 4. Upload Files to Sandbox (if any)
         message_content = prompt
@@ -897,7 +860,6 @@ async def initiate_agent_with_files(
             if failed_uploads:
                 message_content += "\n\nThe following files failed to upload:\n"
                 for failed_file in failed_uploads: message_content += f"- {failed_file}\n"
-
 
         # 5. Add initial user message to thread
         message_id = str(uuid.uuid4())

@@ -246,7 +246,7 @@ export const getProject = async (projectId: string): Promise<Project> => {
       },
     };
 
-    console.log('Mapped project data for frontend:', mappedProject);
+    // console.log('Mapped project data for frontend:', mappedProject);
 
     return mappedProject;
   } catch (error) {
@@ -1437,11 +1437,9 @@ export const initiateAgent = async (
     const response = await fetch(`${API_URL}/agent/initiate`, {
       method: 'POST',
       headers: {
-        // Note: Don't set Content-Type for FormData
         Authorization: `Bearer ${session.access_token}`,
       },
       body: formData,
-      // Add cache: 'no-store' to prevent caching
       cache: 'no-store',
     });
 
@@ -1535,6 +1533,7 @@ export interface Model {
   id: string;
   display_name: string;
   short_name?: string;
+  requires_subscription?: boolean;
 }
 
 export interface AvailableModelsResponse {
