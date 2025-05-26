@@ -816,7 +816,7 @@ async def list_thread_workspace_files(
         logger.error(f"Error listing workspace files for thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to list workspace files")
 
-@router.get("/thread/{thread_id}/files/{filename}")
+@router.get("/thread/{thread_id}/files/{filename:path}")
 async def download_file_from_thread(
     thread_id: str,
     filename: str,
@@ -850,15 +850,24 @@ async def download_file_from_thread(
         # Get the sandbox and download the file
         sandbox = await get_or_start_sandbox(sandbox_id)
         
-        # Construct the file path (assuming files are in workspace)
-        file_path = f"/workspace/{filename}"
+        # Handle the file path - if it doesn't start with /workspace, prepend it
+        if not filename.startswith('/workspace'):
+            if filename.startswith('/'):
+                file_path = f"/workspace{filename}"
+            else:
+                file_path = f"/workspace/{filename}"
+        else:
+            file_path = filename
         
         try:
             # Download file content from sandbox
             file_content = sandbox.fs.download_file(file_path)
             
+            # Extract just the filename for the download header
+            actual_filename = file_path.split('/')[-1]
+            
             # Determine content type based on file extension
-            content_type, _ = mimetypes.guess_type(filename)
+            content_type, _ = mimetypes.guess_type(actual_filename)
             if not content_type:
                 content_type = 'application/octet-stream'
             
@@ -867,14 +876,14 @@ async def download_file_from_thread(
                 content=file_content,
                 media_type=content_type,
                 headers={
-                    "Content-Disposition": f"attachment; filename={filename}",
+                    "Content-Disposition": f"attachment; filename={actual_filename}",
                     "Cache-Control": "no-cache"
                 }
             )
             
         except Exception as file_error:
-            logger.error(f"Error downloading file {filename} from sandbox {sandbox_id}: {str(file_error)}")
-            raise HTTPException(status_code=404, detail=f"File '{filename}' not found in workspace")
+            logger.error(f"Error downloading file {file_path} from sandbox {sandbox_id}: {str(file_error)}")
+            raise HTTPException(status_code=404, detail=f"File '{file_path}' not found in workspace")
         
     except HTTPException:
         raise
