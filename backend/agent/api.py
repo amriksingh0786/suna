@@ -816,3 +816,132 @@ async def download_file_from_thread(
     except Exception as e:
         logger.error(f"Error downloading file from thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to download file")
+
+@router.get("/threads")
+async def get_threads(user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Get all threads for the current user (supports X-app tokens)."""
+    logger.info(f"Fetching threads for user: {user_id}")
+    client = await db.client
+    
+    try:
+        # Query threads filtered by account_id (user_id from X-app token)
+        threads_result = await client.table('threads').select('*').eq('account_id', user_id).order('updated_at', desc=True).execute()
+        
+        if not threads_result.data:
+            logger.info(f"No threads found for user: {user_id}")
+            return []
+        
+        # Map database fields to ensure consistency with frontend Thread type
+        mapped_threads = []
+        for thread in threads_result.data:
+            mapped_threads.append({
+                "thread_id": thread['thread_id'],
+                "account_id": thread['account_id'],
+                "project_id": thread.get('project_id'),
+                "is_public": thread.get('is_public', False),
+                "created_at": thread['created_at'],
+                "updated_at": thread['updated_at']
+            })
+        
+        logger.info(f"Found {len(mapped_threads)} threads for user: {user_id}")
+        return mapped_threads
+        
+    except Exception as e:
+        logger.error(f"Error fetching threads for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch threads: {str(e)}")
+
+@router.get("/projects")
+async def get_projects(user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Get all projects for the current user (supports X-app tokens)."""
+    logger.info(f"Fetching projects for user: {user_id}")
+    client = await db.client
+    
+    try:
+        # Query projects filtered by account_id (user_id from X-app token)
+        projects_result = await client.table('projects').select('*').eq('account_id', user_id).order('updated_at', desc=True).execute()
+        
+        if not projects_result.data:
+            logger.info(f"No projects found for user: {user_id}")
+            return []
+        
+        # Map database fields to ensure consistency with frontend Project type
+        mapped_projects = []
+        for project in projects_result.data:
+            mapped_projects.append({
+                "id": project['project_id'],
+                "name": project.get('name', ''),
+                "description": project.get('description', ''),
+                "account_id": project['account_id'],
+                "created_at": project['created_at'],
+                "updated_at": project.get('updated_at'),
+                "sandbox": project.get('sandbox', {}),
+                "is_public": project.get('is_public', False)
+            })
+        
+        logger.info(f"Found {len(mapped_projects)} projects for user: {user_id}")
+        return mapped_projects
+        
+    except Exception as e:
+        logger.error(f"Error fetching projects for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch projects: {str(e)}")
+
+@router.get("/thread/{thread_id}")
+async def get_thread(thread_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Get specific thread details (supports X-app tokens)."""
+    logger.info(f"Fetching thread details for: {thread_id}")
+    client = await db.client
+    
+    try:
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Get thread data
+        thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).single().execute()
+        
+        if not thread_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        thread = thread_result.data
+        
+        # Map to consistent format
+        mapped_thread = {
+            "thread_id": thread['thread_id'],
+            "account_id": thread['account_id'],
+            "project_id": thread.get('project_id'),
+            "is_public": thread.get('is_public', False),
+            "created_at": thread['created_at'],
+            "updated_at": thread['updated_at']
+        }
+        
+        return mapped_thread
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch thread: {str(e)}")
+
+@router.delete("/thread/{thread_id}")
+async def delete_thread(thread_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Delete a thread and all associated data (supports X-app tokens)."""
+    logger.info(f"Deleting thread: {thread_id}")
+    client = await db.client
+    
+    try:
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Delete thread (cascade will handle messages and agent_runs)
+        delete_result = await client.table('threads').delete().eq('thread_id', thread_id).execute()
+        
+        if not delete_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found or already deleted")
+        
+        logger.info(f"Successfully deleted thread: {thread_id}")
+        return {"message": "Thread deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete thread: {str(e)}")
