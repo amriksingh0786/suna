@@ -751,6 +751,71 @@ async def initiate_agent_with_files(
         # TODO: Clean up created project/thread if initiation fails mid-way
         raise HTTPException(status_code=500, detail=f"Failed to initiate agent session: {str(e)}")
 
+@router.get("/thread/{thread_id}/files/list")
+async def list_thread_workspace_files(
+    thread_id: str,
+    path: str = "/workspace",
+    user_id: str = Depends(get_current_user_id_from_jwt)
+):
+    """List files and directories in the thread's workspace at the specified path."""
+    try:
+        client = await db.client
+        
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Get thread information to find project_id
+        thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).execute()
+        if not thread_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        project_id = thread_result.data[0]['project_id']
+        
+        # Get project information to find sandbox_id
+        project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
+        if not project_result.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        sandbox_info = project_result.data[0].get('sandbox')
+        if not sandbox_info or not sandbox_info.get('id'):
+            raise HTTPException(status_code=404, detail="Sandbox not found for project")
+        
+        sandbox_id = sandbox_info['id']
+        
+        # Get the sandbox and list files
+        sandbox = await get_or_start_sandbox(sandbox_id)
+        
+        try:
+            # List files at the specified path
+            files = sandbox.fs.list_files(path)
+            result = []
+            
+            for file in files:
+                # Convert file information to our model
+                full_path = f"{path.rstrip('/')}/{file.name}" if path != '/' else f"/{file.name}"
+                file_info = {
+                    "name": file.name,
+                    "path": full_path,
+                    "is_dir": file.is_dir,
+                    "size": file.size,
+                    "mod_time": str(file.mod_time),
+                    "permissions": getattr(file, 'permissions', None)
+                }
+                result.append(file_info)
+            
+            logger.info(f"Successfully listed {len(result)} files in thread {thread_id} workspace at path {path}")
+            return {"files": result}
+            
+        except Exception as file_error:
+            logger.error(f"Error listing files in thread {thread_id} workspace at path {path}: {str(file_error)}")
+            raise HTTPException(status_code=404, detail=f"Path '{path}' not found in workspace")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing workspace files for thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list workspace files")
+
 @router.get("/thread/{thread_id}/files/{filename}")
 async def download_file_from_thread(
     thread_id: str,

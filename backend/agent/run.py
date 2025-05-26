@@ -119,14 +119,16 @@ async def run_agent(
             }
             break
         # Check if last message is from assistant using direct Supabase query
-        latest_message = await client.table('messages').select('*').eq('thread_id', thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
-        if latest_message.data and len(latest_message.data) > 0:
-            message_type = latest_message.data[0].get('type')
-            if message_type == 'assistant':
-                logger.info(f"Last message was from assistant, stopping execution")
-                trace.event(name="last_message_from_assistant", level="INFO", status_message=(f"Last message was from assistant, stopping execution"))
-                continue_execution = False
-                break
+        # NOTE: Commented out this logic as it was causing premature stopping after tool execution
+        # The agent should only stop when it uses explicit termination tools like ask, complete, etc.
+        # latest_message = await client.table('messages').select('*').eq('thread_id', thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
+        # if latest_message.data and len(latest_message.data) > 0:
+        #     message_type = latest_message.data[0].get('type')
+        #     if message_type == 'assistant':
+        #         logger.info(f"Last message was from assistant, stopping execution")
+        #         trace.event(name="last_message_from_assistant", level="INFO", status_message=(f"Last message was from assistant, stopping execution"))
+        #         continue_execution = False
+        #         break
 
         # ---- Temporary Message Handling (Browser State & Image Context) ----
         temporary_message = None

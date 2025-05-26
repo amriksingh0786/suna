@@ -426,10 +426,13 @@ Here are the XML tools available with examples:
                                         # Don't yield the finish chunk to avoid confusing the client
                                         continue
                                 elif chunk.get('finish_reason') == 'xml_tool_limit_reached':
-                                    # Don't auto-continue if XML tool limit was reached
-                                    logger.info(f"Detected finish_reason='xml_tool_limit_reached', stopping auto-continue")
-                                    auto_continue = False
-                                    # Still yield the chunk to inform the client
+                                    # Auto-continue when XML tool limit is reached - this means the agent paused but will continue
+                                    logger.info(f"Detected finish_reason='xml_tool_limit_reached', auto-continuing ({auto_continue_count + 1}/{native_max_auto_continues})")
+                                    auto_continue = True
+                                    auto_continue_count += 1
+                                    # Still yield the chunk to inform the client about the pause
+                                    yield chunk
+                                    continue
 
                             # Otherwise just yield the chunk normally
                             yield chunk
