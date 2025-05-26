@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Body, File, UploadFile, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 import asyncio
 import json
 import traceback
@@ -10,6 +10,7 @@ import jwt
 from pydantic import BaseModel
 import tempfile
 import os
+import mimetypes
 
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
@@ -749,3 +750,69 @@ async def initiate_agent_with_files(
         logger.error(f"Error in agent initiation: {str(e)}\n{traceback.format_exc()}")
         # TODO: Clean up created project/thread if initiation fails mid-way
         raise HTTPException(status_code=500, detail=f"Failed to initiate agent session: {str(e)}")
+
+@router.get("/thread/{thread_id}/files/{filename}")
+async def download_file_from_thread(
+    thread_id: str,
+    filename: str,
+    user_id: str = Depends(get_current_user_id_from_jwt)
+):
+    """Download a file from the thread's project sandbox."""
+    try:
+        client = await db.client
+        
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Get thread information to find project_id
+        thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).execute()
+        if not thread_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        project_id = thread_result.data[0]['project_id']
+        
+        # Get project information to find sandbox_id
+        project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
+        if not project_result.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        sandbox_info = project_result.data[0].get('sandbox')
+        if not sandbox_info or not sandbox_info.get('id'):
+            raise HTTPException(status_code=404, detail="Sandbox not found for project")
+        
+        sandbox_id = sandbox_info['id']
+        
+        # Get the sandbox and download the file
+        sandbox = await get_or_start_sandbox(sandbox_id)
+        
+        # Construct the file path (assuming files are in workspace)
+        file_path = f"/workspace/{filename}"
+        
+        try:
+            # Download file content from sandbox
+            file_content = sandbox.fs.download_file(file_path)
+            
+            # Determine content type based on file extension
+            content_type, _ = mimetypes.guess_type(filename)
+            if not content_type:
+                content_type = 'application/octet-stream'
+            
+            # Return file as streaming response
+            return Response(
+                content=file_content,
+                media_type=content_type,
+                headers={
+                    "Content-Disposition": f"attachment; filename={filename}",
+                    "Cache-Control": "no-cache"
+                }
+            )
+            
+        except Exception as file_error:
+            logger.error(f"Error downloading file {filename} from sandbox {sandbox_id}: {str(file_error)}")
+            raise HTTPException(status_code=404, detail=f"File '{filename}' not found in workspace")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading file from thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to download file")
