@@ -105,7 +105,16 @@ async def log_requests_middleware(request: Request, call_next):
         raise
 
 # Define allowed origins based on environment
-allowed_origins = ["https://www.suna.so", "https://suna.so", "http://localhost:3000"]
+allowed_origins = [
+    "https://www.suna.so", 
+    "https://suna.so", 
+    "http://localhost:3000",
+    "http://localhost:3001",  # X-app might run on different port
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://localhost:3002",  # Additional ports for development
+    "http://127.0.0.1:3002"
+]
 allow_origin_regex = None
 
 # Add staging-specific origins
@@ -118,8 +127,17 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Content-Type", 
+        "Authorization", 
+        "Accept", 
+        "Origin", 
+        "X-Requested-With",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers"
+    ],
+    expose_headers=["*"],
 )
 
 # Include the agent router with a prefix
@@ -144,13 +162,14 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     
-    workers = 2
+    workers = 1  # Reduced workers for development
+    port = 8000  # Changed to port 5000 to match X-app expectation
     
-    logger.info(f"Starting server on 0.0.0.0:8000 with {workers} workers")
+    logger.info(f"Starting server on 0.0.0.0:{port} with {workers} workers")
     uvicorn.run(
         "api:app", 
         host="0.0.0.0", 
-        port=8000,
+        port=port,
         workers=workers,
-        # reload=True
+        reload=True  # Enable reload for development
     )
