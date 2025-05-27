@@ -3,13 +3,14 @@ from typing import Optional
 import jwt
 from jwt.exceptions import PyJWTError
 
-# This function extracts the user ID from Supabase JWT
+# This function extracts the user ID from Supabase JWT or X-app JWT
 async def get_current_user_id_from_jwt(request: Request) -> str:
     """
     Extract and verify the user ID from the JWT in the Authorization header.
     
-    This function is used as a dependency in FastAPI routes to ensure the user
-    is authenticated and to provide the user ID for authorization checks.
+    This function supports both Supabase JWT tokens and X-app JWT tokens.
+    For Supabase tokens, it extracts the 'sub' claim.
+    For X-app tokens, it extracts the 'id', 'userId', or 'user_id' claim.
     
     Args:
         request: The FastAPI request object
@@ -32,26 +33,31 @@ async def get_current_user_id_from_jwt(request: Request) -> str:
     token = auth_header.split(' ')[1]
     
     try:
-        # For Supabase JWT, we just need to decode and extract the user ID
-        # The actual validation is handled by Supabase's RLS
+        # Decode without signature verification to check token structure
         payload = jwt.decode(token, options={"verify_signature": False})
         
-        # Supabase stores the user ID in the 'sub' claim
+        # Try Supabase token format first (has 'sub' claim)
         user_id = payload.get('sub')
+        if user_id:
+            return user_id
         
-        if not user_id:
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token payload",
-                headers={"WWW-Authenticate": "Bearer"}
-            )
+        # Try X-app token format (might have 'id', 'userId', or 'user_id' claim)
+        user_id = payload.get('id') or payload.get('userId') or payload.get('user_id')
+        if user_id:
+            # Convert to string if it's not already
+            return str(user_id)
         
-        return user_id
-        
-    except PyJWTError:
+        # If neither format works, raise an error
         raise HTTPException(
             status_code=401,
-            detail="Invalid token",
+            detail="Invalid token payload - no user identifier found",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+        
+    except PyJWTError as e:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"}
         )
 
@@ -103,6 +109,8 @@ async def get_user_id_from_stream_auth(
     This function is specifically designed for streaming endpoints that need to support both
     header-based and query parameter-based authentication (for EventSource compatibility).
     
+    Supports both Supabase and X-app JWT tokens.
+    
     Args:
         request: The FastAPI request object
         token: Optional token from query parameters
@@ -116,11 +124,17 @@ async def get_user_id_from_stream_auth(
     # Try to get user_id from token in query param (for EventSource which can't set headers)
     if token:
         try:
-            # For Supabase JWT, we just need to decode and extract the user ID
             payload = jwt.decode(token, options={"verify_signature": False})
+            
+            # Try Supabase token format first (has 'sub' claim)
             user_id = payload.get('sub')
             if user_id:
                 return user_id
+            
+            # Try X-app token format
+            user_id = payload.get('id') or payload.get('userId') or payload.get('user_id')
+            if user_id:
+                return str(user_id)
         except Exception:
             pass
     
@@ -131,9 +145,16 @@ async def get_user_id_from_stream_auth(
             # Extract token from header
             header_token = auth_header.split(' ')[1]
             payload = jwt.decode(header_token, options={"verify_signature": False})
+            
+            # Try Supabase token format first
             user_id = payload.get('sub')
             if user_id:
                 return user_id
+            
+            # Try X-app token format
+            user_id = payload.get('id') or payload.get('userId') or payload.get('user_id')
+            if user_id:
+                return str(user_id)
         except Exception:
             pass
     
@@ -176,8 +197,13 @@ async def verify_thread_access(client, thread_id: str, user_id: str):
                 return True
         
     account_id = thread_data.get('account_id')
-    # When using service role, we need to manually check account membership instead of using current_user_account_role
     if account_id:
+        # Special case for x-api users: if the user_id matches the account_id directly,
+        # they have access (this handles x-api users who own their own threads)
+        if user_id == account_id:
+            return True
+            
+        # Check basejump account membership for regular users
         account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
         if account_user_result.data and len(account_user_result.data) > 0:
             return True
@@ -190,6 +216,8 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
     
     This function is used for endpoints that support both authenticated and 
     unauthenticated access (like public projects).
+    
+    Supports both Supabase and X-app JWT tokens.
     
     Args:
         request: The FastAPI request object
@@ -205,12 +233,18 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
     token = auth_header.split(' ')[1]
     
     try:
-        # For Supabase JWT, we just need to decode and extract the user ID
         payload = jwt.decode(token, options={"verify_signature": False})
         
-        # Supabase stores the user ID in the 'sub' claim
+        # Try Supabase token format first (has 'sub' claim)
         user_id = payload.get('sub')
+        if user_id:
+            return user_id
         
-        return user_id
+        # Try X-app token format
+        user_id = payload.get('id') or payload.get('userId') or payload.get('user_id')
+        if user_id:
+            return str(user_id)
+        
+        return None
     except PyJWTError:
         return None

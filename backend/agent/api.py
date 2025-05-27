@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Body, File, UploadFile, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 import asyncio
 import json
 import traceback
@@ -10,6 +10,7 @@ import jwt
 from pydantic import BaseModel
 import tempfile
 import os
+import mimetypes
 
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
@@ -593,7 +594,9 @@ async def initiate_agent_with_files(
 
     logger.info(f"[\033[91mDEBUG\033[0m] Initiating new agent with prompt and {len(files)} files (Instance: {instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
     client = await db.client
-    account_id = user_id # In Basejump, personal account_id is the same as user_id
+    
+    # Ensure the user has a corresponding account in basejump.accounts
+    account_id = await ensure_user_has_account(client, user_id)
     
     can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
     if not can_use:
@@ -749,3 +752,517 @@ async def initiate_agent_with_files(
         logger.error(f"Error in agent initiation: {str(e)}\n{traceback.format_exc()}")
         # TODO: Clean up created project/thread if initiation fails mid-way
         raise HTTPException(status_code=500, detail=f"Failed to initiate agent session: {str(e)}")
+
+@router.get("/thread/{thread_id}/files/list")
+async def list_thread_workspace_files(
+    thread_id: str,
+    path: str = "/workspace",
+    user_id: str = Depends(get_current_user_id_from_jwt)
+):
+    """List files and directories in the thread's workspace at the specified path."""
+    try:
+        client = await db.client
+        
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Get thread information to find project_id
+        thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).execute()
+        if not thread_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        project_id = thread_result.data[0]['project_id']
+        
+        # Get project information to find sandbox_id
+        project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
+        if not project_result.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        sandbox_info = project_result.data[0].get('sandbox')
+        if not sandbox_info or not sandbox_info.get('id'):
+            raise HTTPException(status_code=404, detail="Sandbox not found for project")
+        
+        sandbox_id = sandbox_info['id']
+        
+        # Get the sandbox and list files
+        sandbox = await get_or_start_sandbox(sandbox_id)
+        
+        try:
+            # List files at the specified path
+            files = sandbox.fs.list_files(path)
+            result = []
+            
+            for file in files:
+                # Convert file information to our model
+                full_path = f"{path.rstrip('/')}/{file.name}" if path != '/' else f"/{file.name}"
+                file_info = {
+                    "name": file.name,
+                    "path": full_path,
+                    "is_dir": file.is_dir,
+                    "size": file.size,
+                    "mod_time": str(file.mod_time),
+                    "permissions": getattr(file, 'permissions', None)
+                }
+                result.append(file_info)
+            
+            logger.info(f"Successfully listed {len(result)} files in thread {thread_id} workspace at path {path}")
+            return {"files": result}
+            
+        except Exception as file_error:
+            logger.error(f"Error listing files in thread {thread_id} workspace at path {path}: {str(file_error)}")
+            raise HTTPException(status_code=404, detail=f"Path '{path}' not found in workspace")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing workspace files for thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list workspace files")
+
+@router.get("/thread/{thread_id}/files/{filename:path}")
+async def download_file_from_thread(
+    thread_id: str,
+    filename: str,
+    user_id: str = Depends(get_current_user_id_from_jwt)
+):
+    """Download a file from the thread's project sandbox."""
+    try:
+        client = await db.client
+        
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Get thread information to find project_id
+        thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).execute()
+        if not thread_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        project_id = thread_result.data[0]['project_id']
+        
+        # Get project information to find sandbox_id
+        project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
+        if not project_result.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        sandbox_info = project_result.data[0].get('sandbox')
+        if not sandbox_info or not sandbox_info.get('id'):
+            raise HTTPException(status_code=404, detail="Sandbox not found for project")
+        
+        sandbox_id = sandbox_info['id']
+        
+        # Get the sandbox and download the file
+        sandbox = await get_or_start_sandbox(sandbox_id)
+        
+        # Handle the file path - if it doesn't start with /workspace, prepend it
+        if not filename.startswith('/workspace'):
+            if filename.startswith('/'):
+                file_path = f"/workspace{filename}"
+            else:
+                file_path = f"/workspace/{filename}"
+        else:
+            file_path = filename
+        
+        try:
+            # Download file content from sandbox
+            file_content = sandbox.fs.download_file(file_path)
+            
+            # Extract just the filename for the download header
+            actual_filename = file_path.split('/')[-1]
+            
+            # Determine content type based on file extension
+            content_type, _ = mimetypes.guess_type(actual_filename)
+            if not content_type:
+                content_type = 'application/octet-stream'
+            
+            # Return file as streaming response
+            return Response(
+                content=file_content,
+                media_type=content_type,
+                headers={
+                    "Content-Disposition": f"attachment; filename={actual_filename}",
+                    "Cache-Control": "no-cache"
+                }
+            )
+            
+        except Exception as file_error:
+            logger.error(f"Error downloading file {file_path} from sandbox {sandbox_id}: {str(file_error)}")
+            raise HTTPException(status_code=404, detail=f"File '{file_path}' not found in workspace")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading file from thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to download file")
+
+@router.get("/threads")
+async def get_threads(user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Get all threads for the current user (supports X-app tokens)."""
+    logger.info(f"Fetching threads for user: {user_id}")
+    client = await db.client
+    
+    try:
+        # Query threads filtered by account_id (user_id from X-app token)
+        threads_result = await client.table('threads').select('*').eq('account_id', user_id).order('updated_at', desc=True).execute()
+        
+        if not threads_result.data:
+            logger.info(f"No threads found for user: {user_id}")
+            return []
+        
+        # Map database fields to ensure consistency with frontend Thread type
+        mapped_threads = []
+        for thread in threads_result.data:
+            mapped_threads.append({
+                "thread_id": thread['thread_id'],
+                "account_id": thread['account_id'],
+                "project_id": thread.get('project_id'),
+                "is_public": thread.get('is_public', False),
+                "created_at": thread['created_at'],
+                "updated_at": thread['updated_at']
+            })
+        
+        logger.info(f"Found {len(mapped_threads)} threads for user: {user_id}")
+        return mapped_threads
+        
+    except Exception as e:
+        logger.error(f"Error fetching threads for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch threads: {str(e)}")
+
+@router.get("/projects")
+async def get_projects(user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Get all projects for the current user (supports X-app tokens)."""
+    logger.info(f"Fetching projects for user: {user_id}")
+    client = await db.client
+    
+    try:
+        # Query projects filtered by account_id (user_id from X-app token)
+        projects_result = await client.table('projects').select('*').eq('account_id', user_id).order('updated_at', desc=True).execute()
+        
+        if not projects_result.data:
+            logger.info(f"No projects found for user: {user_id}")
+            return []
+        
+        # Map database fields to ensure consistency with frontend Project type
+        mapped_projects = []
+        for project in projects_result.data:
+            mapped_projects.append({
+                "id": project['project_id'],
+                "name": project.get('name', ''),
+                "description": project.get('description', ''),
+                "account_id": project['account_id'],
+                "created_at": project['created_at'],
+                "updated_at": project.get('updated_at'),
+                "sandbox": project.get('sandbox', {}),
+                "is_public": project.get('is_public', False)
+            })
+        
+        logger.info(f"Found {len(mapped_projects)} projects for user: {user_id}")
+        return mapped_projects
+        
+    except Exception as e:
+        logger.error(f"Error fetching projects for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch projects: {str(e)}")
+
+@router.get("/project/{project_id}")
+async def get_project(project_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Get specific project details (supports X-app tokens)."""
+    logger.info(f"Fetching project details for: {project_id}")
+    client = await db.client
+    
+    try:
+        # Get project data
+        project_result = await client.table('projects').select('*').eq('project_id', project_id).single().execute()
+        
+        if not project_result.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project = project_result.data
+        
+        # Check if project is public or if user has access
+        if not project.get('is_public'):
+            account_id = project.get('account_id')
+            if account_id:
+                # Special case for x-api users: if the user_id matches the account_id directly,
+                # they have access (this handles x-api users who own their own projects)
+                if user_id != account_id:
+                    # Check basejump account membership for regular users
+                    account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
+                    if not (account_user_result.data and len(account_user_result.data) > 0):
+                        raise HTTPException(status_code=403, detail="Not authorized to access this project")
+        
+        # Map to consistent format
+        mapped_project = {
+            "id": project['project_id'],
+            "name": project.get('name', ''),
+            "description": project.get('description', ''),
+            "account_id": project['account_id'],
+            "created_at": project['created_at'],
+            "updated_at": project.get('updated_at'),
+            "sandbox": project.get('sandbox', {}),
+            "is_public": project.get('is_public', False)
+        }
+        
+        return mapped_project
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch project: {str(e)}")
+
+@router.get("/thread/{thread_id}")
+async def get_thread(thread_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Get specific thread details (supports X-app tokens)."""
+    logger.info(f"Fetching thread details for: {thread_id}")
+    client = await db.client
+    
+    try:
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Get thread data
+        thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).single().execute()
+        
+        if not thread_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        thread = thread_result.data
+        
+        # Map to consistent format
+        mapped_thread = {
+            "thread_id": thread['thread_id'],
+            "account_id": thread['account_id'],
+            "project_id": thread.get('project_id'),
+            "is_public": thread.get('is_public', False),
+            "created_at": thread['created_at'],
+            "updated_at": thread['updated_at']
+        }
+        
+        return mapped_thread
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch thread: {str(e)}")
+
+@router.delete("/thread/{thread_id}")
+async def delete_thread(thread_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Delete a thread and all associated data (supports X-app tokens)."""
+    logger.info(f"Deleting thread: {thread_id}")
+    client = await db.client
+    
+    try:
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Delete thread (cascade will handle messages and agent_runs)
+        delete_result = await client.table('threads').delete().eq('thread_id', thread_id).execute()
+        
+        if not delete_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found or already deleted")
+        
+        logger.info(f"Successfully deleted thread: {thread_id}")
+        return {"message": "Thread deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete thread: {str(e)}")
+
+@router.get("/thread/{thread_id}/messages")
+async def get_messages(thread_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Get all messages for a thread (supports X-app tokens)."""
+    logger.info(f"Fetching messages for thread: {thread_id}")
+    client = await db.client
+    
+    try:
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Get messages using the SQL function that handles context truncation
+        messages_result = await client.rpc('get_llm_formatted_messages', {'p_thread_id': thread_id}).execute()
+        
+        if not messages_result.data:
+            logger.info(f"No messages found for thread: {thread_id}")
+            return []
+        
+        # Parse the returned data which might be stringified JSON
+        messages = []
+        for item in messages_result.data:
+            if isinstance(item, str):
+                try:
+                    parsed_item = json.loads(item)
+                    messages.append(parsed_item)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse message: {item}")
+            else:
+                messages.append(item)
+        
+        logger.info(f"Found {len(messages)} messages for thread: {thread_id}")
+        return messages
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching messages for thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch messages: {str(e)}")
+
+@router.post("/thread/{thread_id}/messages")
+async def add_message(
+    thread_id: str, 
+    message_data: dict,
+    user_id: str = Depends(get_current_user_id_from_jwt)
+):
+    """Add a message to a thread (supports X-app tokens)."""
+    logger.info(f"Adding message to thread: {thread_id}")
+    client = await db.client
+    
+    try:
+        # Verify thread access
+        await verify_thread_access(client, thread_id, user_id)
+        
+        # Extract content and type from the request
+        content = message_data.get('content', '')
+        message_type = message_data.get('type', 'user')
+        
+        if not content:
+            raise HTTPException(status_code=400, detail="Message content is required")
+        
+        # Format the message in the format the LLM expects
+        message_payload = {
+            "role": message_type,
+            "content": content,
+        }
+        
+        # Insert the message into the messages table
+        message_id = str(uuid.uuid4())
+        insert_result = await client.table('messages').insert({
+            "message_id": message_id,
+            "thread_id": thread_id,
+            "type": message_type,
+            "is_llm_message": True,
+            "content": json.dumps(message_payload),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }).execute()
+        
+        # Check if the insert was successful by looking at the data
+        if not insert_result.data:
+            logger.error(f"Error inserting message: No data returned from insert")
+            raise HTTPException(status_code=500, detail="Failed to add message")
+        
+        logger.info(f"Successfully added message to thread {thread_id}")
+        return {"message": "Message added successfully", "message_id": message_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding message to thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to add message: {str(e)}")
+
+async def ensure_user_has_account(client, user_id: str) -> str:
+    """
+    Ensure that a user has a corresponding account in basejump.accounts.
+    For x-api users, this creates a personal account if it doesn't exist.
+    Returns the account_id to use.
+    """
+    logger.info(f"[DEBUG] ensure_user_has_account called for user_id: {user_id}")
+    try:
+        # First, check if the user already has an account
+        logger.info(f"[DEBUG] Checking if account exists for user_id: {user_id}")
+        account_result = await client.schema('basejump').from_('accounts').select('id').eq('id', user_id).execute()
+        print("account_result", account_result)
+        if account_result.data and len(account_result.data) > 0:
+            logger.info(f"[DEBUG] Account already exists for user {user_id}")
+            return user_id
+        
+        logger.info(f"[DEBUG] No account found for user {user_id}, creating one...")
+        
+        # First, check if we already have an auth user for this x-api user
+        logger.info(f"[DEBUG] Checking for existing auth user for x-api user {user_id}")
+        created_user_id = user_id  # Default to original user_id
+        
+        try:
+            # Try to find existing auth user with this x_api_user_id in metadata
+            logger.info(f"[DEBUG] Searching for existing auth user with x_api_user_id: {user_id}")
+            users_result = await client.auth.admin.list_users()
+            
+            # list_users() returns a list directly, not an object with .users attribute
+            if users_result and isinstance(users_result, list):
+                for user in users_result:
+                    user_metadata = getattr(user, 'user_metadata', {}) or {}
+                    if user_metadata.get('x_api_user_id') == user_id:
+                        created_user_id = user.id
+                        logger.info(f"[DEBUG] Found existing auth user for x-api user {user_id}: {created_user_id}")
+                        break
+                else:
+                    # No existing user found, create a new one
+                    logger.info(f"[DEBUG] No existing auth user found, creating new one for x-api user {user_id}")
+                    import time
+                    timestamp = int(time.time())
+                    unique_email = f"x-api-user-{user_id}-{timestamp}@placeholder.com"
+                    
+                    user_create_result = await client.auth.admin.create_user({
+                        "email": unique_email,
+                        "email_confirm": True,
+                        "user_metadata": {"source": "x-api", "x_api_user_id": user_id},
+                        "app_metadata": {"provider": "x-api", "providers": ["x-api"]}
+                    })
+                    
+                    if user_create_result.user:
+                        created_user_id = user_create_result.user.id
+                        logger.info(f"[DEBUG] Successfully created new auth user with email {unique_email}: {created_user_id}")
+                    else:
+                        logger.warning(f"[DEBUG] User creation returned no user object, but no error. Proceeding with original user_id...")
+            else:
+                logger.warning(f"[DEBUG] list_users() returned unexpected format: {type(users_result)}")
+            
+        except Exception as e:
+            # If anything fails, log the error but continue with original user_id
+            logger.error(f"[DEBUG] Error checking/creating auth user: {str(e)}")
+            logger.warning(f"[DEBUG] Proceeding with original user_id as created_user_id")
+        
+        # Now create the account in basejump.accounts using the created user ID
+        logger.info(f"[DEBUG] Creating account in basejump.accounts with account_id={user_id} and primary_owner_user_id={created_user_id}")
+        try:
+            account_insert_result = await client.schema('basejump').from_('accounts').insert({
+                'id': user_id,  # Keep original user_id as account_id for consistency
+                'primary_owner_user_id': created_user_id,  # Use the actual created user ID
+                'name': 'Personal Account',
+                'personal_account': True
+            }).execute()
+            
+            if account_insert_result.error:
+                logger.error(f"[DEBUG] Error creating account: {account_insert_result.error}")
+                raise Exception(f"Failed to create account: {account_insert_result.error}")
+            
+            logger.info(f"[DEBUG] Successfully created account for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"[DEBUG] Exception during account creation: {str(e)}")
+            raise Exception(f"Failed to create account: {str(e)}")
+        
+        # Add user to account_user table
+        logger.info(f"[DEBUG] Adding user {created_user_id} to account_user table for account {user_id}")
+        try:
+            account_user_result = await client.schema('basejump').from_('account_user').insert({
+                'user_id': created_user_id,  # Use the actual created user ID
+                'account_id': user_id,  # Use original user_id as account_id
+                'account_role': 'owner'
+            }).execute()
+            
+            if account_user_result.error:
+                logger.warning(f"[DEBUG] Error adding user to account_user table: {account_user_result.error}")
+            else:
+                logger.info(f"[DEBUG] Successfully added user to account_user table")
+                
+        except Exception as e:
+            logger.warning(f"[DEBUG] Exception adding user to account_user table: {str(e)}")
+        
+        logger.info(f"[DEBUG] Successfully set up account for user {user_id}")
+        return user_id
+        
+    except Exception as e:
+        logger.error(f"[DEBUG] Exception in ensure_user_has_account for user {user_id}: {str(e)}")
+        # If account creation fails, we can still try to use the user_id as account_id
+        # This maintains backward compatibility
+        return user_id
