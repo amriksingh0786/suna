@@ -369,10 +369,12 @@ async def stream_agent_run(
             initial_responses = []
             if initial_responses_json:
                 initial_responses = [json.loads(r) for r in initial_responses_json]
-                logger.debug(f"Sending {len(initial_responses)} initial responses for {agent_run_id}")
+                logger.info(f"Sending {len(initial_responses)} initial responses for {agent_run_id}")
                 for response in initial_responses:
                     yield f"data: {json.dumps(response)}\n\n"
                 last_processed_index = len(initial_responses) - 1
+            else:
+                logger.info(f"No initial responses found in Redis for {agent_run_id}")
             initial_yield_complete = True
 
             # 2. Check run status *after* yielding initial data
@@ -444,9 +446,18 @@ async def stream_agent_run(
             listener_task = asyncio.create_task(listen_messages())
 
             # 4. Main loop to process messages from the queue
+            # Send a heartbeat message to confirm the stream is working
+            yield f"data: {json.dumps({'type': 'heartbeat', 'message': 'Stream connected and waiting for responses'})}\n\n"
+            
             while not terminate_stream:
                 try:
-                    queue_item = await message_queue.get()
+                    # Add a timeout to the queue.get() to send periodic heartbeats
+                    try:
+                        queue_item = await asyncio.wait_for(message_queue.get(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        # Send heartbeat every 10 seconds if no messages
+                        yield f"data: {json.dumps({'type': 'heartbeat', 'message': 'Waiting for agent responses...'})}\n\n"
+                        continue
 
                     if queue_item["type"] == "new_response":
                         # Fetch new responses from Redis list starting after the last processed index
@@ -1079,27 +1090,16 @@ async def get_messages(thread_id: str, user_id: str = Depends(get_current_user_i
         # Verify thread access
         await verify_thread_access(client, thread_id, user_id)
         
-        # Get messages using the SQL function that handles context truncation
-        messages_result = await client.rpc('get_llm_formatted_messages', {'p_thread_id': thread_id}).execute()
+        # Get messages directly from the table to match the original Supabase format
+        # This returns the raw database format that the frontend expects
+        messages_result = await client.table('messages').select('*').eq('thread_id', thread_id).neq('type', 'cost').neq('type', 'summary').order('created_at', desc=False).execute()
         
         if not messages_result.data:
             logger.info(f"No messages found for thread: {thread_id}")
             return []
         
-        # Parse the returned data which might be stringified JSON
-        messages = []
-        for item in messages_result.data:
-            if isinstance(item, str):
-                try:
-                    parsed_item = json.loads(item)
-                    messages.append(parsed_item)
-                except json.JSONDecodeError:
-                    logger.error(f"Failed to parse message: {item}")
-            else:
-                messages.append(item)
-        
-        logger.info(f"Found {len(messages)} messages for thread: {thread_id}")
-        return messages
+        logger.info(f"Found {len(messages_result.data)} messages for thread: {thread_id}")
+        return messages_result.data
         
     except HTTPException:
         raise

@@ -58,6 +58,10 @@ async def run_agent_background(
 
     logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
     logger.info(f"🚀 Using model: {model_name} (thinking: {enable_thinking}, reasoning_effort: {reasoning_effort})")
+    
+    # Add debugging to see if we reach this point
+    print(f"[DEBUG] Background agent task started for {agent_run_id}")
+    logger.info(f"[DEBUG] Background agent task started for {agent_run_id}")
 
     client = await db.client
     start_time = datetime.now(timezone.utc)
@@ -110,6 +114,9 @@ async def run_agent_background(
 
 
         # Initialize agent generator
+        print(f"[DEBUG] About to call run_agent for {agent_run_id}")
+        logger.info(f"[DEBUG] About to call run_agent for {agent_run_id}")
+        
         agent_gen = run_agent(
             thread_id=thread_id, project_id=project_id, stream=stream,
             model_name=model_name,
@@ -117,11 +124,20 @@ async def run_agent_background(
             enable_context_manager=enable_context_manager,
             trace=trace
         )
+        
+        print(f"[DEBUG] run_agent generator created for {agent_run_id}")
+        logger.info(f"[DEBUG] run_agent generator created for {agent_run_id}")
 
         final_status = "running"
         error_message = None
 
+        print(f"[DEBUG] Starting to iterate over agent_gen for {agent_run_id}")
+        logger.info(f"[DEBUG] Starting to iterate over agent_gen for {agent_run_id}")
+        
         async for response in agent_gen:
+            print(f"[DEBUG] Received response from agent: {response}")
+            logger.info(f"[DEBUG] Received response from agent: {response}")
+            
             if stop_signal_received:
                 logger.info(f"Agent run {agent_run_id} stopped by signal.")
                 final_status = "stopped"
@@ -130,6 +146,7 @@ async def run_agent_background(
 
             # Store response in Redis list and publish notification
             response_json = json.dumps(response)
+            print(f"[DEBUG] Storing response in Redis for {agent_run_id}")
             asyncio.create_task(redis.rpush(response_list_key, response_json))
             asyncio.create_task(redis.publish(response_channel, "new"))
             total_responses += 1
