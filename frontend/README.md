@@ -1,4 +1,4 @@
-# Suna frontend
+# Atlas AI frontend
 
 ## Getting Started
 

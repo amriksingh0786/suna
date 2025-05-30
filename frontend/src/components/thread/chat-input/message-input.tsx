@@ -142,27 +142,30 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
                 messages={messages}
               />
             )}
-
-
           </div>
-          {subscriptionStatus === 'no_subscription' && !isLocalMode() &&
+          {subscriptionStatus === 'no_subscription' && !isLocalMode() && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <p className='text-sm text-amber-500 hidden sm:block'>Upgrade for full performance</p>
-                  <div className='sm:hidden absolute bottom-0 left-0 right-0 flex justify-center'>
-                    <p className='text-xs text-amber-500 px-2 py-1'>
+                  <p className="text-sm text-amber-500 hidden sm:block">
+                    Upgrade for full performance
+                  </p>
+                  <div className="sm:hidden absolute bottom-0 left-0 right-0 flex justify-center">
+                    <p className="text-xs text-amber-500 px-2 py-1">
                       Upgrade for better performance
                     </p>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>The free tier is severely limited by inferior models; upgrade to experience the true full Suna experience.</p>
+                  <p>
+                    The free tier is severely limited by inferior models;
+                    upgrade to experience the true full Atlas AI experience.
+                  </p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          }
-          <div className='flex items-center gap-2'>
+          )}
+          <div className="flex items-center gap-2">
             <ModelSelector
               selectedModel={selectedModel}
               onModelChange={onModelChange}
@@ -178,14 +181,18 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
               className={cn(
                 'w-7 h-7 flex-shrink-0 self-end',
                 isAgentRunning ? 'bg-red-500 hover:bg-red-600' : '',
-                (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
+                (!value.trim() &&
+                  uploadedFiles.length === 0 &&
+                  !isAgentRunning) ||
                   loading ||
                   (disabled && !isAgentRunning)
                   ? 'opacity-50'
                   : '',
               )}
               disabled={
-                (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
+                (!value.trim() &&
+                  uploadedFiles.length === 0 &&
+                  !isAgentRunning) ||
                 loading ||
                 (disabled && !isAgentRunning)
               }

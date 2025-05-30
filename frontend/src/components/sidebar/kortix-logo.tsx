@@ -17,7 +17,7 @@ export function KortixLogo() {
     <div className="flex h-6 w-6 items-center justify-center flex-shrink-0">
       <Image
         src="/kortix-symbol.svg"
-        alt="Kortix"
+        alt="Incentiv"
         width={24}
         height={24}
         className={`${mounted && theme === 'dark' ? 'invert' : ''}`}

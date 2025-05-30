@@ -115,7 +115,7 @@ class Configuration:
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_API_BASE: Optional[str] = "https://openrouter.ai/api/v1"
     OR_SITE_URL: Optional[str] = "https://kortix.ai"
-    OR_APP_NAME: Optional[str] = "Kortix AI"    
+    OR_APP_NAME: Optional[str] = "Incentiv AI"    
     
     # AWS Bedrock credentials
     AWS_ACCESS_KEY_ID: Optional[str] = None
@@ -159,8 +159,10 @@ class Configuration:
     STRIPE_PRODUCT_ID_STAGING: str = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.2.8"
-    SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
+    #SANDBOX_IMAGE_NAME = "kortix/suna:0.1.2.8"
+    #SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
+    SANDBOX_IMAGE_NAME = "amriksinghkhalsa/atlas-ai:v1.0"
+    SANDBOX_ENTRYPOINT = ""
 
     # LangFuse configuration
     LANGFUSE_PUBLIC_KEY: Optional[str] = None

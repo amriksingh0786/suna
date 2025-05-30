@@ -8,9 +8,7 @@ import {
   ChatInput,
   ChatInputHandles,
 } from '@/components/thread/chat-input/chat-input';
-import {
-  BillingError,
-} from '@/lib/api';
+import { BillingError } from '@/lib/api';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
@@ -78,11 +76,18 @@ function DashboardContent() {
         formData.append('files', file, file.name);
       });
 
-      if (options?.model_name) formData.append('model_name', options.model_name);
-      formData.append('enable_thinking', String(options?.enable_thinking ?? false));
+      if (options?.model_name)
+        formData.append('model_name', options.model_name);
+      formData.append(
+        'enable_thinking',
+        String(options?.enable_thinking ?? false),
+      );
       formData.append('reasoning_effort', options?.reasoning_effort ?? 'low');
       formData.append('stream', String(options?.stream ?? true));
-      formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
+      formData.append(
+        'enable_context_manager',
+        String(options?.enable_context_manager ?? false),
+      );
 
       console.log('FormData content:', Array.from(formData.entries()));
 
@@ -99,7 +104,7 @@ function DashboardContent() {
       console.error('Error during submission process:', error);
       if (error instanceof BillingError) {
         console.log('Handling BillingError:', error.detail);
-        onOpen("paymentRequiredDialog");
+        onOpen('paymentRequiredDialog');
       }
     } finally {
       setIsSubmitting(false);
@@ -153,37 +158,41 @@ function DashboardContent() {
           </div>
         )}
 
-        <div className={cn(
-          "flex-1 flex flex-col items-center justify-center px-4",
-          "lg:justify-center",
-          "sm:justify-center sm:px-6"
-        )}>
-          <div className={cn(
-            "flex flex-col items-center text-center w-full",
-            "max-w-full",
-            "sm:max-w-3xl"
-          )}>
-            <h1 className={cn(
-              'tracking-tight font-semibold leading-tight',
-              'text-3xl',
-              'sm:text-4xl'
-            )}>
+        <div
+          className={cn(
+            'flex-1 flex flex-col items-center justify-center px-4',
+            'lg:justify-center',
+            'sm:justify-center sm:px-6',
+          )}
+        >
+          <div
+            className={cn(
+              'flex flex-col items-center text-center w-full',
+              'max-w-full',
+              'sm:max-w-3xl',
+            )}
+          >
+            <h1
+              className={cn(
+                'tracking-tight font-semibold leading-tight',
+                'text-3xl',
+                'sm:text-4xl',
+              )}
+            >
               Hey
             </h1>
-            <p className={cn(
-              "tracking-tight font-normal text-muted-foreground/80 mt-2 flex items-center gap-2",
-              "text-2xl",
-              "sm:text-3xl sm:mt-3 sm:px-4"
-            )}>
-              What would you like Suna to do today?
+            <p
+              className={cn(
+                'tracking-tight font-normal text-muted-foreground/80 mt-2 flex items-center gap-2',
+                'text-2xl',
+                'sm:text-3xl sm:mt-3 sm:px-4',
+              )}
+            >
+              What would you like Atlas AI to do today?
             </p>
           </div>
-          
-          <div className={cn(
-            "w-full mb-2",
-            "max-w-full",
-            "sm:max-w-3xl"
-          )}>
+
+          <div className={cn('w-full mb-2', 'max-w-full', 'sm:max-w-3xl')}>
             <ChatInput
               ref={chatInputRef}
               onSubmit={handleSubmit}
@@ -194,7 +203,7 @@ function DashboardContent() {
               hideAttachments={false}
             />
           </div>
-          
+
           <Examples onSelectPrompt={setInputValue} />
         </div>
 
@@ -217,10 +226,12 @@ export default function DashboardPage() {
       fallback={
         <div className="flex flex-col h-full w-full">
           <div className="flex-1 flex flex-col items-center justify-center px-4">
-            <div className={cn(
-              "flex flex-col items-center text-center w-full space-y-8",
-              "max-w-[850px] sm:max-w-full sm:px-4"
-            )}>
+            <div
+              className={cn(
+                'flex flex-col items-center text-center w-full space-y-8',
+                'max-w-[850px] sm:max-w-full sm:px-4',
+              )}
+            >
               <Skeleton className="h-10 w-40 sm:h-8 sm:w-32" />
               <Skeleton className="h-7 w-56 sm:h-6 sm:w-48" />
               <Skeleton className="w-full h-[100px] rounded-xl sm:h-[80px]" />

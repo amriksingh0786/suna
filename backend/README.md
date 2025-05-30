@@ -1,4 +1,4 @@
-# Suna Backend
+# Atlas AI Backend
 
 ## Running the backend
 

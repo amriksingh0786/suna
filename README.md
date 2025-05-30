@@ -1,14 +1,14 @@
 <div align="center">
 
-# Suna - Open Source Generalist AI Agent
+# Atlas AI - Open Source Generalist AI Agent
 
 (that acts on your behalf)
 
-![Suna Screenshot](frontend/public/banner.png)
+![Atlas AI Screenshot](frontend/public/banner.png)
 
-Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Suna becomes your digital companion for research, data analysis, and everyday challenges—combining powerful capabilities with an intuitive interface that understands what you need and delivers results.
+Atlas AI is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Atlas AI becomes your digital companion for research, data analysis, and everyday challenges—combining powerful capabilities with an intuitive interface that understands what you need and delivers results.
 
-Suna's powerful toolkit includes seamless browser automation to navigate the web and extract data, file management for document creation and editing, web crawling and extended search capabilities, command-line execution for system tasks, website deployment, and integration with various APIs and services. These capabilities work together harmoniously, allowing Suna to solve your complex problems and automate workflows through simple conversations!
+Atlas AI's powerful toolkit includes seamless browser automation to navigate the web and extract data, file management for document creation and editing, web crawling and extended search capabilities, command-line execution for system tasks, website deployment, and integration with various APIs and services. These capabilities work together harmoniously, allowing Atlas AI to solve your complex problems and automate workflows through simple conversations!
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue)](./license)
 [![Discord Follow](https://dcbadge.limes.pink/api/server/Py6pCBUUPw?style=flat)](https://discord.gg/Py6pCBUUPw)
@@ -20,7 +20,7 @@ Suna's powerful toolkit includes seamless browser automation to navigate the web
 
 ## Table of Contents
 
-- [Suna Architecture](#project-architecture)
+- [Atlas AI Architecture](#project-architecture)
   - [Backend API](#backend-api)
   - [Frontend](#frontend)
   - [Agent Docker](#agent-docker)
@@ -34,7 +34,7 @@ Suna's powerful toolkit includes seamless browser automation to navigate the web
 
 ![Architecture Diagram](docs/images/diagram.png)
 
-Suna consists of four main components:
+Atlas AI consists of four main components:
 
 ### Backend API
 
@@ -80,7 +80,7 @@ Handles data persistence with authentication, user management, conversation hist
 
 ## Self-Hosting
 
-Suna can be self-hosted on your own infrastructure using our setup wizard. For a comprehensive guide to self-hosting Suna, please refer to our [Self-Hosting Guide](./docs/SELF-HOSTING.md).
+Atlas AI can be self-hosted on your own infrastructure using our setup wizard. For a comprehensive guide to self-hosting Atlas AI, please refer to our [Self-Hosting Guide](./docs/SELF-HOSTING.md).
 
 The setup process includes:
 
@@ -115,7 +115,7 @@ python start.py
 
 See the [Self-Hosting Guide](./docs/SELF-HOSTING.md) for detailed manual setup instructions.
 
-The wizard will guide you through all necessary steps to get your Suna instance up and running. For detailed instructions, troubleshooting tips, and advanced configuration options, see the [Self-Hosting Guide](./SELF-HOSTING.md).
+The wizard will guide you through all necessary steps to get your Atlas AI instance up and running. For detailed instructions, troubleshooting tips, and advanced configuration options, see the [Self-Hosting Guide](./SELF-HOSTING.md).
 
 ## Contributing
 
@@ -142,4 +142,4 @@ We welcome contributions from the community! Please see our [Contributing Guide]
 
 ## License
 
-Kortix Suna is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
+Incentiv Atlas AI is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.

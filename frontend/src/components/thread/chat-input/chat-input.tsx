@@ -132,7 +132,9 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       let baseModelName = getActualModelId(selectedModel);
       let thinkingEnabled = false;
       if (selectedModel.endsWith('-thinking')) {
-        baseModelName = getActualModelId(selectedModel.replace(/-thinking$/, ''));
+        baseModelName = getActualModelId(
+          selectedModel.replace(/-thinking$/, ''),
+        );
         thinkingEnabled = true;
       }
 
@@ -172,23 +174,29 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       }
 
       // Check if file is referenced in existing chat messages before deleting from server
-      const isFileUsedInChat = messages.some(message => {
-        const content = typeof message.content === 'string' ? message.content : '';
+      const isFileUsedInChat = messages.some((message) => {
+        const content =
+          typeof message.content === 'string' ? message.content : '';
         return content.includes(`[Uploaded File: ${fileToRemove.path}]`);
       });
 
       // Only delete from server if file is not referenced in chat history
       if (sandboxId && fileToRemove.path && !isFileUsedInChat) {
-        deleteFileMutation.mutate({
-          sandboxId,
-          filePath: fileToRemove.path,
-        }, {
-          onError: (error) => {
-            console.error('Failed to delete file from server:', error);
-          }
-        });
+        deleteFileMutation.mutate(
+          {
+            sandboxId,
+            filePath: fileToRemove.path,
+          },
+          {
+            onError: (error) => {
+              console.error('Failed to delete file from server:', error);
+            },
+          },
+        );
       } else if (isFileUsedInChat) {
-        console.log(`Skipping server deletion for ${fileToRemove.path} - file is referenced in chat history`);
+        console.log(
+          `Skipping server deletion for ${fileToRemove.path} - file is referenced in chat history`,
+        );
       }
     };
 
@@ -252,7 +260,6 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
                 onStopAgent={onStopAgent}
                 isDraggingOver={isDraggingOver}
                 uploadedFiles={uploadedFiles}
-
                 fileInputRef={fileInputRef}
                 isUploading={isUploading}
                 sandboxId={sandboxId}
@@ -261,7 +268,6 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
                 setIsUploading={setIsUploading}
                 hideAttachments={hideAttachments}
                 messages={messages}
-
                 selectedModel={selectedModel}
                 onModelChange={handleModelChange}
                 modelOptions={modelOptions}
@@ -281,7 +287,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
           >
             <div className="text-xs text-muted-foreground flex items-center gap-2">
               <Loader2 className="h-3 w-3 animate-spin" />
-              <span>Kortix Suna is working...</span>
+              <span>Incentiv Atlas AI is working...</span>
             </div>
           </motion.div>
         )}

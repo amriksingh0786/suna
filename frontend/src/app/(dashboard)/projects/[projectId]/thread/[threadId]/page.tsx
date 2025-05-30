@@ -1,11 +1,6 @@
 'use client';
 
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { BillingError } from '@/lib/api';
 import { toast } from 'sonner';
@@ -18,12 +13,25 @@ import { isLocalMode } from '@/lib/config';
 import { ThreadContent } from '@/components/thread/content/ThreadContent';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
 import { useAddUserMessageMutation } from '@/hooks/react-query/threads/use-messages';
-import { useStartAgentMutation, useStopAgentMutation } from '@/hooks/react-query/threads/use-agent-run';
+import {
+  useStartAgentMutation,
+  useStopAgentMutation,
+} from '@/hooks/react-query/threads/use-agent-run';
 import { useSubscription } from '@/hooks/react-query/subscriptions/use-subscriptions';
 import { SubscriptionStatus } from '@/components/thread/chat-input/_use-model-selection';
 
-import { UnifiedMessage, ApiMessageType, ToolCallInput, Project } from '../_types';
-import { useThreadData, useToolCalls, useBilling, useKeyboardShortcuts } from '../_hooks';
+import {
+  UnifiedMessage,
+  ApiMessageType,
+  ToolCallInput,
+  Project,
+} from '../_types';
+import {
+  useThreadData,
+  useToolCalls,
+  useBilling,
+  useKeyboardShortcuts,
+} from '../_hooks';
 import { ThreadError, UpgradeDialog, ThreadLayout } from '../_components';
 
 export default function ThreadPage({
@@ -46,7 +54,8 @@ export default function ThreadPage({
   const [fileToView, setFileToView] = useState<string | null>(null);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
-  const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] = useState(false);
+  const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
+    useState(false);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -121,79 +130,83 @@ export default function ThreadPage({
   const stopAgentMutation = useStopAgentMutation();
 
   const { data: subscriptionData } = useSubscription();
-  const subscriptionStatus: SubscriptionStatus = subscriptionData?.status === 'active'
-    ? 'active'
-    : 'no_subscription';
+  const subscriptionStatus: SubscriptionStatus =
+    subscriptionData?.status === 'active' ? 'active' : 'no_subscription';
 
-  const handleProjectRenamed = useCallback((newName: string) => {
-  }, []);
+  const handleProjectRenamed = useCallback((newName: string) => {}, []);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
-  const handleNewMessageFromStream = useCallback((message: UnifiedMessage) => {
-    console.log(
-      `[STREAM HANDLER] Received message: ID=${message.message_id}, Type=${message.type}`,
-    );
-
-    if (!message.message_id) {
-      console.warn(
-        `[STREAM HANDLER] Received message is missing ID: Type=${message.type}, Content=${message.content?.substring(0, 50)}...`,
+  const handleNewMessageFromStream = useCallback(
+    (message: UnifiedMessage) => {
+      console.log(
+        `[STREAM HANDLER] Received message: ID=${message.message_id}, Type=${message.type}`,
       );
-    }
 
-    setMessages((prev) => {
-      const messageExists = prev.some(
-        (m) => m.message_id === message.message_id,
-      );
-      if (messageExists) {
-        return prev.map((m) =>
-          m.message_id === message.message_id ? message : m,
+      if (!message.message_id) {
+        console.warn(
+          `[STREAM HANDLER] Received message is missing ID: Type=${message.type}, Content=${message.content?.substring(0, 50)}...`,
         );
-      } else {
-        return [...prev, message];
       }
-    });
 
-    if (message.type === 'tool') {
-      setAutoOpenedPanel(false);
-    }
-  }, [setMessages, setAutoOpenedPanel]);
-
-  const handleStreamStatusChange = useCallback((hookStatus: string) => {
-    console.log(`[PAGE] Hook status changed: ${hookStatus}`);
-    switch (hookStatus) {
-      case 'idle':
-      case 'completed':
-      case 'stopped':
-      case 'agent_not_running':
-      case 'error':
-      case 'failed':
-        setAgentStatus('idle');
-        setAgentRunId(null);
-        setAutoOpenedPanel(false);
-
-        if (
-          [
-            'completed',
-            'stopped',
-            'agent_not_running',
-            'error',
-            'failed',
-          ].includes(hookStatus)
-        ) {
-          scrollToBottom('smooth');
+      setMessages((prev) => {
+        const messageExists = prev.some(
+          (m) => m.message_id === message.message_id,
+        );
+        if (messageExists) {
+          return prev.map((m) =>
+            m.message_id === message.message_id ? message : m,
+          );
+        } else {
+          return [...prev, message];
         }
-        break;
-      case 'connecting':
-        setAgentStatus('connecting');
-        break;
-      case 'streaming':
-        setAgentStatus('running');
-        break;
-    }
-  }, [setAgentStatus, setAgentRunId, setAutoOpenedPanel]);
+      });
+
+      if (message.type === 'tool') {
+        setAutoOpenedPanel(false);
+      }
+    },
+    [setMessages, setAutoOpenedPanel],
+  );
+
+  const handleStreamStatusChange = useCallback(
+    (hookStatus: string) => {
+      console.log(`[PAGE] Hook status changed: ${hookStatus}`);
+      switch (hookStatus) {
+        case 'idle':
+        case 'completed':
+        case 'stopped':
+        case 'agent_not_running':
+        case 'error':
+        case 'failed':
+          setAgentStatus('idle');
+          setAgentRunId(null);
+          setAutoOpenedPanel(false);
+
+          if (
+            [
+              'completed',
+              'stopped',
+              'agent_not_running',
+              'error',
+              'failed',
+            ].includes(hookStatus)
+          ) {
+            scrollToBottom('smooth');
+          }
+          break;
+        case 'connecting':
+          setAgentStatus('connecting');
+          break;
+        case 'streaming':
+          setAgentStatus('running');
+          break;
+      }
+    },
+    [setAgentStatus, setAgentRunId, setAutoOpenedPanel],
+  );
 
   const handleStreamError = useCallback((errorMessage: string) => {
     console.error(`[PAGE] Stream hook error: ${errorMessage}`);
@@ -255,37 +268,48 @@ export default function ThreadPage({
       try {
         const messagePromise = addUserMessageMutation.mutateAsync({
           threadId,
-          message
+          message,
         });
 
         const agentPromise = startAgentMutation.mutateAsync({
           threadId,
-          options
+          options,
         });
 
-        const results = await Promise.allSettled([messagePromise, agentPromise]);
+        const results = await Promise.allSettled([
+          messagePromise,
+          agentPromise,
+        ]);
 
         if (results[0].status === 'rejected') {
           const reason = results[0].reason;
-          console.error("Failed to send message:", reason);
-          throw new Error(`Failed to send message: ${reason?.message || reason}`);
+          console.error('Failed to send message:', reason);
+          throw new Error(
+            `Failed to send message: ${reason?.message || reason}`,
+          );
         }
 
         if (results[1].status === 'rejected') {
           const error = results[1].reason;
-          console.error("Failed to start agent:", error);
+          console.error('Failed to start agent:', error);
 
           if (error instanceof BillingError) {
-            console.log("Caught BillingError:", error.detail);
+            console.log('Caught BillingError:', error.detail);
             setBillingData({
               currentUsage: error.detail.currentUsage as number | undefined,
               limit: error.detail.limit as number | undefined,
-              message: error.detail.message || 'Monthly usage limit reached. Please upgrade.',
-              accountId: project?.account_id || null
+              message:
+                error.detail.message ||
+                'Monthly usage limit reached. Please upgrade.',
+              accountId: project?.account_id || null,
             });
             setShowBillingAlert(true);
 
-            setMessages(prev => prev.filter(m => m.message_id !== optimisticUserMessage.message_id));
+            setMessages((prev) =>
+              prev.filter(
+                (m) => m.message_id !== optimisticUserMessage.message_id,
+              ),
+            );
             return;
           }
 
@@ -297,7 +321,6 @@ export default function ThreadPage({
 
         messagesQuery.refetch();
         agentRunsQuery.refetch();
-
       } catch (err) {
         console.error('Error sending message or starting agent:', err);
         if (!(err instanceof BillingError)) {
@@ -310,7 +333,18 @@ export default function ThreadPage({
         setIsSending(false);
       }
     },
-    [threadId, project?.account_id, addUserMessageMutation, startAgentMutation, messagesQuery, agentRunsQuery, setMessages, setBillingData, setShowBillingAlert, setAgentRunId],
+    [
+      threadId,
+      project?.account_id,
+      addUserMessageMutation,
+      startAgentMutation,
+      messagesQuery,
+      agentRunsQuery,
+      setMessages,
+      setBillingData,
+      setShowBillingAlert,
+      setAgentRunId,
+    ],
   );
 
   const handleStopAgent = useCallback(async () => {
@@ -327,7 +361,13 @@ export default function ThreadPage({
         console.error('Error stopping agent:', error);
       }
     }
-  }, [stopStreaming, agentRunId, stopAgentMutation, agentRunsQuery, setAgentStatus]);
+  }, [
+    stopStreaming,
+    agentRunId,
+    stopAgentMutation,
+    agentRunsQuery,
+    setAgentStatus,
+  ]);
 
   const handleOpenFileViewer = useCallback((filePath?: string) => {
     if (filePath) {
@@ -348,7 +388,9 @@ export default function ThreadPage({
             Assistant Message
           </div>
           <div className="rounded-md border bg-muted/50 p-3">
-            <div className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">{assistantContent}</div>
+            <div className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">
+              {assistantContent}
+            </div>
           </div>
         </div>
       );
@@ -367,16 +409,19 @@ export default function ThreadPage({
               Tool Result
             </div>
             <div
-              className={`px-2 py-0.5 rounded-full text-xs ${isSuccess
-                ? 'bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300'
-                : 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300'
-                }`}
+              className={`px-2 py-0.5 rounded-full text-xs ${
+                isSuccess
+                  ? 'bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300'
+                  : 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300'
+              }`}
             >
               {isSuccess ? 'Success' : 'Failed'}
             </div>
           </div>
           <div className="rounded-md border bg-muted/50 p-3">
-            <div className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">{toolContent}</div>
+            <div className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">
+              {toolContent}
+            </div>
           </div>
         </div>
       );
@@ -405,7 +450,14 @@ export default function ThreadPage({
         }
       }
     }
-  }, [initialPanelOpenAttempted, messages, toolCalls, initialLoadCompleted, setIsSidePanelOpen, setCurrentToolIndex]);
+  }, [
+    initialPanelOpenAttempted,
+    messages,
+    toolCalls,
+    initialLoadCompleted,
+    setIsSidePanelOpen,
+    setCurrentToolIndex,
+  ]);
 
   useEffect(() => {
     if (agentRunId && agentRunId !== currentHookRunId) {
@@ -435,22 +487,38 @@ export default function ThreadPage({
   }, [messages, streamingTextContent, streamingToolCall]);
 
   useEffect(() => {
-    console.log(`[PAGE] 🔄 Page AgentStatus: ${agentStatus}, Hook Status: ${streamHookStatus}, Target RunID: ${agentRunId || 'none'}, Hook RunID: ${currentHookRunId || 'none'}`);
+    console.log(
+      `[PAGE] 🔄 Page AgentStatus: ${agentStatus}, Hook Status: ${streamHookStatus}, Target RunID: ${agentRunId || 'none'}, Hook RunID: ${currentHookRunId || 'none'}`,
+    );
 
-    if ((streamHookStatus === 'completed' || streamHookStatus === 'stopped' ||
-      streamHookStatus === 'agent_not_running' || streamHookStatus === 'error') &&
-      (agentStatus === 'running' || agentStatus === 'connecting')) {
-      console.log('[PAGE] Detected hook completed but UI still shows running, updating status');
+    if (
+      (streamHookStatus === 'completed' ||
+        streamHookStatus === 'stopped' ||
+        streamHookStatus === 'agent_not_running' ||
+        streamHookStatus === 'error') &&
+      (agentStatus === 'running' || agentStatus === 'connecting')
+    ) {
+      console.log(
+        '[PAGE] Detected hook completed but UI still shows running, updating status',
+      );
       setAgentStatus('idle');
       setAgentRunId(null);
       setAutoOpenedPanel(false);
     }
-  }, [agentStatus, streamHookStatus, agentRunId, currentHookRunId, setAgentStatus, setAgentRunId, setAutoOpenedPanel]);
+  }, [
+    agentStatus,
+    streamHookStatus,
+    agentRunId,
+    currentHookRunId,
+    setAgentStatus,
+    setAgentRunId,
+    setAutoOpenedPanel,
+  ]);
 
   // SEO title update
   useEffect(() => {
     if (projectName) {
-      document.title = `${projectName} | Kortix Suna`;
+      document.title = `${projectName} | Incentiv Atlas AI`;
 
       const metaDescription = document.querySelector(
         'meta[name="description"]',
@@ -458,13 +526,13 @@ export default function ThreadPage({
       if (metaDescription) {
         metaDescription.setAttribute(
           'content',
-          `${projectName} - Interactive agent conversation powered by Kortix Suna`,
+          `${projectName} - Interactive agent conversation powered by Incentiv Atlas AI`,
         );
       }
 
       const ogTitle = document.querySelector('meta[property="og:title"]');
       if (ogTitle) {
-        ogTitle.setAttribute('content', `${projectName} | Kortix Suna`);
+        ogTitle.setAttribute('content', `${projectName} | Incentiv Atlas AI`);
       }
 
       const ogDescription = document.querySelector(
@@ -486,7 +554,9 @@ export default function ThreadPage({
 
   useEffect(() => {
     if (initialLoadCompleted && subscriptionData) {
-      const hasSeenUpgradeDialog = localStorage.getItem('suna_upgrade_dialog_displayed');
+      const hasSeenUpgradeDialog = localStorage.getItem(
+        'suna_upgrade_dialog_displayed',
+      );
       const isFreeTier = subscriptionStatus === 'no_subscription';
       if (!hasSeenUpgradeDialog && isFreeTier && !isLocalMode()) {
         setShowUpgradeDialog(true);
@@ -601,23 +671,33 @@ export default function ThreadPage({
 
         <div
           className={cn(
-            "fixed bottom-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent px-4 pt-8 transition-all duration-200 ease-in-out",
-            leftSidebarState === 'expanded' ? 'left-[72px] lg:left-[256px]' : 'left-[72px]',
-            isSidePanelOpen ? 'right-[90%] sm:right-[450px] md:right-[500px] lg:right-[550px] xl:right-[650px]' : 'right-0',
-            isMobile ? 'left-0 right-0' : ''
-          )}>
-          <div className={cn(
-            "mx-auto",
-            isMobile ? "w-full px-4" : "max-w-3xl"
-          )}>
+            'fixed bottom-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent px-4 pt-8 transition-all duration-200 ease-in-out',
+            leftSidebarState === 'expanded'
+              ? 'left-[72px] lg:left-[256px]'
+              : 'left-[72px]',
+            isSidePanelOpen
+              ? 'right-[90%] sm:right-[450px] md:right-[500px] lg:right-[550px] xl:right-[650px]'
+              : 'right-0',
+            isMobile ? 'left-0 right-0' : '',
+          )}
+        >
+          <div
+            className={cn('mx-auto', isMobile ? 'w-full px-4' : 'max-w-3xl')}
+          >
             <ChatInput
               value={newMessage}
               onChange={setNewMessage}
               onSubmit={handleSubmitMessage}
-              placeholder="Ask Suna anything..."
+              placeholder="Ask Atlas AI anything..."
               loading={isSending}
-              disabled={isSending || agentStatus === 'running' || agentStatus === 'connecting'}
-              isAgentRunning={agentStatus === 'running' || agentStatus === 'connecting'}
+              disabled={
+                isSending ||
+                agentStatus === 'running' ||
+                agentStatus === 'connecting'
+              }
+              isAgentRunning={
+                agentStatus === 'running' || agentStatus === 'connecting'
+              }
               onStopAgent={handleStopAgent}
               autoFocus={!isLoading}
               onFileBrowse={handleOpenFileViewer}
@@ -635,4 +715,4 @@ export default function ThreadPage({
       />
     </>
   );
-} 
+}

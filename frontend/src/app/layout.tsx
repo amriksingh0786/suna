@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     template: `%s - ${siteConfig.name}`,
   },
   description:
-    'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Suna becomes your digital companion for research, data analysis, and everyday challenges.',
+    'Atlas AI is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Atlas AI becomes your digital companion for research, data analysis, and everyday challenges.',
   keywords: [
     'AI',
     'artificial intelligence',
@@ -43,13 +43,13 @@ export const metadata: Metadata = {
     'research',
     'data analysis',
   ],
-  authors: [{ name: 'Kortix Team', url: 'https://suna.so' }],
+  authors: [{ name: 'Incentiv Team', url: 'https://suna.so' }],
   creator:
-    'Kortix Team - Adam Cohen Hillel, Marko Kraemer, Domenico Gagliardi, and Quoc Dat Le',
+    'Incentiv Team - Adam Cohen Hillel, Marko Kraemer, Domenico Gagliardi, and Quoc Dat Le',
   publisher:
-    'Kortix Team - Adam Cohen Hillel, Marko Kraemer, Domenico Gagliardi, and Quoc Dat Le',
+    'Incentiv Team - Adam Cohen Hillel, Marko Kraemer, Domenico Gagliardi, and Quoc Dat Le',
   category: 'Technology',
-  applicationName: 'Suna',
+  applicationName: 'Atlas AI',
   formatDetection: {
     telephone: false,
     email: false,
@@ -64,17 +64,17 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: 'Suna - Open Source Generalist AI Agent',
+    title: 'Atlas AI - Open Source Generalist AI Agent',
     description:
-      'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+      'Atlas AI is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     url: siteConfig.url,
-    siteName: 'Suna',
+    siteName: 'Atlas AI',
     images: [
       {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Agent',
+        alt: 'Atlas AI - Open Source Generalist AI Agent',
         type: 'image/png',
       },
     ],
@@ -83,9 +83,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Suna - Open Source Generalist AI Agent',
+    title: 'Atlas AI - Open Source Generalist AI Agent',
     description:
-      'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+      'Atlas AI is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     creator: '@kortixai',
     site: '@kortixai',
     images: [
@@ -93,7 +93,7 @@ export const metadata: Metadata = {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Agent',
+        alt: 'Atlas AI - Open Source Generalist AI Agent',
       },
     ],
   },

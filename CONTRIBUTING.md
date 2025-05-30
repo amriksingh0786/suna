@@ -1,6 +1,6 @@
-# Contributing to Suna
+# Contributing to Atlas AI
 
-Thank you for your interest in contributing to Suna! This document outlines the contribution process and guidelines.
+Thank you for your interest in contributing to Atlas AI! This document outlines the contribution process and guidelines.
 
 ## Contribution Workflow
 

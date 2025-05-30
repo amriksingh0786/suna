@@ -78,7 +78,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         
         <!-- Simple search example -->
         <web-search 
-            query="what is Kortix AI and what are they building?" 
+            query="what is Incentiv AI and what are they building?" 
             num_results="20">
         </web-search>
         
@@ -205,7 +205,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         <!-- Example workflow: -->
         <!-- 1. First search for relevant content with a specific question -->
         <web-search 
-            query="what is Kortix AI and what are they building?" 
+            query="what is Incentiv AI and what are they building?" 
             num_results="20">
         </web-search>
         
