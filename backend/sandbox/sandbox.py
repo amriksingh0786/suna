@@ -122,6 +122,14 @@ def create_sandbox(password: str, project_id: str = None):
     # Start supervisord in a session for new sandbox
     start_supervisord_session(sandbox)
     
+    # Ensure workspace directory exists
+    try:
+        logger.info("Ensuring /workspace directory exists")
+        sandbox.process.exec("mkdir -p /workspace && chmod 755 /workspace", timeout=30)
+        logger.info("Workspace directory created successfully")
+    except Exception as e:
+        logger.warning(f"Failed to create workspace directory: {e}")
+    
     logger.debug(f"Sandbox environment successfully initialized")
     return sandbox
 
