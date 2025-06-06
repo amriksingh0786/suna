@@ -59,7 +59,8 @@ async def run_agent_background(
     enable_thinking: Optional[bool],
     reasoning_effort: Optional[str],
     stream: bool,
-    enable_context_manager: bool
+    enable_context_manager: bool,
+    bypass_billing: bool = False
 ):
     """Run the agent in the background using Redis for state."""
     await initialize()
@@ -130,7 +131,8 @@ async def run_agent_background(
             model_name=model_name,
             enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
             enable_context_manager=enable_context_manager,
-            trace=trace
+            trace=trace,
+            bypass_billing=bypass_billing
         )
         
         print(f"[DEBUG] run_agent generator created for {agent_run_id}")

@@ -41,7 +41,8 @@ async def run_agent(
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = 'low',
     enable_context_manager: bool = True,
-    trace: Optional[StatefulTraceClient] = None
+    trace: Optional[StatefulTraceClient] = None,
+    bypass_billing: bool = False
 ):
     """Run the development agent with specified configuration."""
     logger.info(f"🚀 Starting agent with model: {model_name}")
@@ -106,18 +107,19 @@ async def run_agent(
         iteration_count += 1
         logger.info(f"🔄 Running iteration {iteration_count} of {max_iterations}...")
 
-        # Billing check on each iteration - still needed within the iterations
-        can_run, message, subscription = await check_billing_status(client, account_id)
-        if not can_run:
-            error_msg = f"Billing limit reached: {message}"
-            trace.event(name="billing_limit_reached", level="ERROR", status_message=(f"{error_msg}"))
-            # Yield a special message to indicate billing limit reached
-            yield {
-                "type": "status",
-                "status": "stopped",
-                "message": error_msg
-            }
-            break
+        # Billing check on each iteration - skip if billing is bypassed
+        if not bypass_billing:
+            can_run, message, subscription = await check_billing_status(client, account_id)
+            if not can_run:
+                error_msg = f"Billing limit reached: {message}"
+                trace.event(name="billing_limit_reached", level="ERROR", status_message=(f"{error_msg}"))
+                # Yield a special message to indicate billing limit reached
+                yield {
+                    "type": "status",
+                    "status": "stopped",
+                    "message": error_msg
+                }
+                break
         # Check if last message is from assistant using direct Supabase query
         latest_message = await client.table('messages').select('*').eq('thread_id', thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
         if latest_message.data and len(latest_message.data) > 0:

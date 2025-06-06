@@ -16,7 +16,7 @@ from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
 from services import redis
 from agent.run import run_agent
-from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access
+from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access, is_x_app_token
 from utils.logger import logger
 from services.billing import check_billing_status, can_use_model
 from utils.config import config
@@ -212,6 +212,7 @@ async def get_agent_run_with_access_check(client, agent_run_id: str, user_id: st
 @router.post("/thread/{thread_id}/agent/start")
 async def start_agent(
     thread_id: str,
+    request: Request,
     body: AgentStartRequest = Body(...),
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
@@ -246,11 +247,11 @@ async def start_agent(
     project_id = thread_data.get('project_id')
     account_id = thread_data.get('account_id')
 
-    can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
+    can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name, request)
     if not can_use:
         raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
-    can_run, message, subscription = await check_billing_status(client, account_id)
+    can_run, message, subscription = await check_billing_status(client, account_id, request)
     if not can_run:
         raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
 
@@ -291,13 +292,17 @@ async def start_agent(
     except Exception as e:
         logger.warning(f"Failed to register agent run in Redis ({instance_key}): {str(e)}")
 
+    # Check if we should bypass billing for x-app token users
+    bypass_billing = request and is_x_app_token(request)
+    
     # Run the agent in the background
     run_agent_background.send(
         agent_run_id=agent_run_id, thread_id=thread_id, instance_id=instance_id,
         project_id=project_id,
         model_name=model_name,  # Already resolved above
         enable_thinking=body.enable_thinking, reasoning_effort=body.reasoning_effort,
-        stream=body.stream, enable_context_manager=body.enable_context_manager
+        stream=body.stream, enable_context_manager=body.enable_context_manager,
+        bypass_billing=bypass_billing
     )
 
     return {"agent_run_id": agent_run_id, "status": "running"}
@@ -575,6 +580,7 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
 
 @router.post("/agent/initiate", response_model=InitiateAgentResponse)
 async def initiate_agent_with_files(
+    request: Request,
     prompt: str = Form(...),
     model_name: Optional[str] = Form(None),  # Default to None to use config.MODEL_TO_USE
     enable_thinking: Optional[bool] = Form(False),
@@ -609,11 +615,11 @@ async def initiate_agent_with_files(
     # Ensure the user has a corresponding account in basejump.accounts
     account_id = await ensure_user_has_account(client, user_id)
     
-    can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
+    can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name, request)
     if not can_use:
         raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
-    can_run, message, subscription = await check_billing_status(client, account_id)
+    can_run, message, subscription = await check_billing_status(client, account_id, request)
     if not can_run:
         raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
 
@@ -748,13 +754,17 @@ async def initiate_agent_with_files(
         except Exception as e:
             logger.warning(f"Failed to register agent run in Redis ({instance_key}): {str(e)}")
 
+        # Check if we should bypass billing for x-app token users
+        bypass_billing = request and is_x_app_token(request)
+        
         # Run agent in background
         run_agent_background.send(
             agent_run_id=agent_run_id, thread_id=thread_id, instance_id=instance_id,
             project_id=project_id,
             model_name=model_name,  # Already resolved above
             enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
-            stream=stream, enable_context_manager=enable_context_manager
+            stream=stream, enable_context_manager=enable_context_manager,
+            bypass_billing=bypass_billing
         )
 
         return {"thread_id": thread_id, "agent_run_id": agent_run_id}

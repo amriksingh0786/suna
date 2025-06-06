@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from utils.logger import logger
 from utils.config import config, EnvMode
 from services.supabase import DBConnection
-from utils.auth_utils import get_current_user_id_from_jwt
+from utils.auth_utils import get_current_user_id_from_jwt, is_x_app_token
 from pydantic import BaseModel
 from utils.constants import MODEL_ACCESS_TIERS, MODEL_NAME_ALIASES
 # Initialize Stripe
@@ -226,12 +226,21 @@ async def get_allowed_models_for_user(client, user_id: str):
     return MODEL_ACCESS_TIERS.get(tier_name, MODEL_ACCESS_TIERS['free'])  # Default to free tier if unknown
 
 
-async def can_use_model(client, user_id: str, model_name: str):
+async def can_use_model(client, user_id: str, model_name: str, request: Request = None):
     if config.ENV_MODE == EnvMode.LOCAL:
         logger.info("Running in local development mode - billing checks are disabled")
         return True, "Local development mode - billing disabled", {
             "price_id": "local_dev",
             "plan_name": "Local Development",
+            "minutes_limit": "no limit"
+        }
+    
+    # Check if user is authenticated with x-app token - bypass billing checks
+    if request and is_x_app_token(request):
+        logger.info(f"X-app token detected for user {user_id} - bypassing billing checks")
+        return True, "X-app token authentication - billing disabled", {
+            "price_id": "x_app_unlimited",
+            "plan_name": "X-App Unlimited",
             "minutes_limit": "no limit"
         }
         
@@ -242,7 +251,7 @@ async def can_use_model(client, user_id: str, model_name: str):
     
     return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription or choose from your available models: {', '.join(allowed_models)}", allowed_models
 
-async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optional[Dict]]:
+async def check_billing_status(client, user_id: str, request: Request = None) -> Tuple[bool, str, Optional[Dict]]:
     """
     Check if a user can run agents based on their subscription and usage.
     
@@ -254,6 +263,15 @@ async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optiona
         return True, "Local development mode - billing disabled", {
             "price_id": "local_dev",
             "plan_name": "Local Development",
+            "minutes_limit": "no limit"
+        }
+    
+    # Check if user is authenticated with x-app token - bypass billing checks
+    if request and is_x_app_token(request):
+        logger.info(f"X-app token detected for user {user_id} - bypassing billing checks")
+        return True, "X-app token authentication - billing disabled", {
+            "price_id": "x_app_unlimited",
+            "plan_name": "X-App Unlimited",
             "minutes_limit": "no limit"
         }
     
@@ -761,6 +779,7 @@ async def get_subscription(
 
 @router.get("/check-status")
 async def check_status(
+    request: Request,
     current_user_id: str = Depends(get_current_user_id_from_jwt)
 ):
     """Check if the user can run agents based on their subscription and usage."""
@@ -769,7 +788,7 @@ async def check_status(
         db = DBConnection()
         client = await db.client
         
-        can_run, message, subscription = await check_billing_status(client, current_user_id)
+        can_run, message, subscription = await check_billing_status(client, current_user_id, request)
         
         return {
             "can_run": can_run,
@@ -864,6 +883,7 @@ async def stripe_webhook(request: Request):
 
 @router.get("/available-models")
 async def get_available_models(
+    request: Request,
     current_user_id: str = Depends(get_current_user_id_from_jwt)
 ):
     """Get the list of models available to the user based on their subscription tier."""
@@ -872,11 +892,16 @@ async def get_available_models(
         db = DBConnection()
         client = await db.client
         
-        # Check if we're in local development mode
-        if config.ENV_MODE == EnvMode.LOCAL:
-            logger.info("Running in local development mode - billing checks are disabled")
+        # Check if we're in local development mode or x-app token
+        if config.ENV_MODE == EnvMode.LOCAL or is_x_app_token(request):
+            if config.ENV_MODE == EnvMode.LOCAL:
+                logger.info("Running in local development mode - billing checks are disabled")
+                tier_name = "Local Development"
+            else:
+                logger.info(f"X-app token detected for user {current_user_id} - providing unlimited model access")
+                tier_name = "X-App Unlimited"
             
-            # In local mode, return all models from MODEL_NAME_ALIASES
+            # In local mode or x-app mode, return all models from MODEL_NAME_ALIASES
             model_info = []
             for short_name, full_name in MODEL_NAME_ALIASES.items():
                 # Skip entries where the key is a full name to avoid duplicates
@@ -887,12 +912,12 @@ async def get_available_models(
                     "id": full_name,
                     "display_name": short_name,
                     "short_name": short_name,
-                    "requires_subscription": False  # Always false in local dev mode
+                    "requires_subscription": False  # Always false in local dev mode or x-app mode
                 })
             
             return {
                 "models": model_info,
-                "subscription_tier": "Local Development",
+                "subscription_tier": tier_name,
                 "total_models": len(model_info)
             }
         

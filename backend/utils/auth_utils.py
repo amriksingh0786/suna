@@ -248,3 +248,38 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
         return None
     except PyJWTError:
         return None
+
+def is_x_app_token(request: Request) -> bool:
+    """
+    Check if the current request is authenticated with an x-app token.
+    
+    X-app tokens are identified by having 'id', 'userId', or 'user_id' claims
+    instead of the standard Supabase 'sub' claim.
+    
+    Args:
+        request: The FastAPI request object
+        
+    Returns:
+        bool: True if authenticated with x-app token, False otherwise
+    """
+    auth_header = request.headers.get('Authorization')
+    
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return False
+    
+    token = auth_header.split(' ')[1]
+    
+    try:
+        payload = jwt.decode(token, options={"verify_signature": False})
+        
+        # If it has 'sub', it's a Supabase token
+        if payload.get('sub'):
+            return False
+        
+        # If it has x-app style claims without 'sub', it's an x-app token
+        if payload.get('id') or payload.get('userId') or payload.get('user_id'):
+            return True
+        
+        return False
+    except PyJWTError:
+        return False
