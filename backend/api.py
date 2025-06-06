@@ -164,7 +164,7 @@ if __name__ == "__main__":
     import uvicorn
     
     workers = 1  # Reduced workers for development
-    port = 8000  # Changed to port 5000 to match X-app expectation
+    port = 8001  # Changed to port 5000 to match X-app expectation
     
     logger.info(f"Starting server on 0.0.0.0:{port} with {workers} workers")
     uvicorn.run(

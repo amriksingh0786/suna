@@ -632,7 +632,7 @@ python -m http.server 8000
 Now let's expose the port so you can try the game directly:
 
 <expose-port>
-8000
+8001
 </expose-port>
 
 ## Final Check and Validation
