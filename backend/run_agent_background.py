@@ -15,9 +15,17 @@ from dramatiq.brokers.rabbitmq import RabbitmqBroker
 import os
 from services.langfuse import langfuse
 
+# Support both URL format (CloudAMQP) and host/port format (local/Docker)
+rabbitmq_url = os.getenv('RABBITMQ_URL')
 rabbitmq_host = os.getenv('RABBITMQ_HOST', 'rabbitmq')
-rabbitmq_port = int(os.getenv('RABBITMQ_PORT', 5672))
-rabbitmq_broker = RabbitmqBroker(host=rabbitmq_host, port=rabbitmq_port, middleware=[dramatiq.middleware.AsyncIO()])
+
+if rabbitmq_url:
+    # Use full URL format (CloudAMQP, etc.)
+    rabbitmq_broker = RabbitmqBroker(url=rabbitmq_url, middleware=[dramatiq.middleware.AsyncIO()])
+else:
+    # Use legacy host/port format (local/Docker)
+    rabbitmq_port = int(os.getenv('RABBITMQ_PORT', 5672))
+    rabbitmq_broker = RabbitmqBroker(host=rabbitmq_host, port=rabbitmq_port, middleware=[dramatiq.middleware.AsyncIO()])
 dramatiq.set_broker(rabbitmq_broker)
 
 _initialized = False
