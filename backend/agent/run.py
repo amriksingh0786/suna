@@ -37,7 +37,7 @@ async def run_agent(
     thread_manager: Optional[ThreadManager] = None,
     native_max_auto_continues: int = 25,
     max_iterations: int = 100,
-    model_name: str = "anthropic/claude-3-7-sonnet-latest",
+    model_name: str = "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = 'low',
     enable_context_manager: bool = True,
@@ -223,7 +223,7 @@ async def run_agent(
         # Set max_tokens based on model
         max_tokens = None
         if "sonnet" in model_name.lower():
-            max_tokens = 64000
+            max_tokens = 8192
         elif "gpt-4" in model_name.lower():
             max_tokens = 4096
             
@@ -453,7 +453,7 @@ async def run_agent(
 #     project_id: str,
 #     thread_manager: ThreadManager,
 #     stream: bool = True,
-#     model_name: str = "anthropic/claude-3-7-sonnet-latest",
+#     model_name: str = "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
 #     enable_thinking: Optional[bool] = False,
 #     reasoning_effort: Optional[str] = 'low',
 #     enable_context_manager: bool = True

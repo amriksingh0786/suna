@@ -37,7 +37,7 @@ class LLMRetryError(LLMError):
 
 def setup_api_keys() -> None:
     """Set up API keys from environment variables."""
-    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER']
+    providers = ['OPENAI', 'GROQ', 'OPENROUTER']  # Removed ANTHROPIC - using Bedrock exclusively
     for provider in providers:
         key = getattr(config, f'{provider}_API_KEY')
         if key:
@@ -123,13 +123,16 @@ def prepare_params(
         })
         logger.debug(f"Added {len(tools)} tools to API parameters")
 
-    # # Add Claude-specific headers
+    # Add Claude-specific headers for Bedrock models
     if "claude" in model_name.lower() or "anthropic" in model_name.lower():
-        params["extra_headers"] = {
-            # "anthropic-beta": "max-tokens-3-5-sonnet-2024-07-15"
-            "anthropic-beta": "output-128k-2025-02-19"
-        }
-        logger.debug("Added Claude-specific headers")
+        # Only add extra headers for non-Bedrock models (direct Anthropic API)
+        if not model_name.startswith("bedrock/"):
+            params["extra_headers"] = {
+                "anthropic-beta": "output-128k-2025-02-19"
+            }
+            logger.debug("Added Claude-specific headers for direct Anthropic API")
+        else:
+            logger.debug("Skipping extra headers for Bedrock Claude models")
 
     # Add OpenRouter-specific parameters
     if model_name.startswith("openrouter/"):
@@ -151,14 +154,41 @@ def prepare_params(
     if model_name.startswith("bedrock/"):
         logger.debug(f"Preparing AWS Bedrock parameters for model: {model_name}")
 
-        if not model_id and "anthropic.claude-3-7-sonnet" in model_name:
-            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+        # Auto-set inference profile ARNs for specific Bedrock models
+        # Using the correct inference profile ARNs for ap-south-1 region
+        # Always check for models that require inference profiles, regardless of model_id parameter
+        if "anthropic.claude-3-7-sonnet-20250219-v1:0" in model_name:
+            # Claude 3.7 requires inference profile ARN
+            params["model_id"] = "arn:aws:bedrock:ap-south-1:269678200989:inference-profile/apac.anthropic.claude-3-7-sonnet-20250219-v1:0"
             logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
+        elif "anthropic.claude-sonnet-4-20250514-v1:0" in model_name:
+            # Claude Sonnet 4 requires inference profile ARN
+            params["model_id"] = "arn:aws:bedrock:ap-south-1:269678200989:inference-profile/apac.anthropic.claude-sonnet-4-20250514-v1:0"
+            logger.info(f"🎯 SUCCESS! Auto-set model_id for Claude Sonnet 4: {params['model_id']}")
+        elif "anthropic.claude-3-5-sonnet-20241022-v2:0" in model_name:
+            # Claude 3.5 Sonnet v2 inference profile ARN
+            params["model_id"] = "arn:aws:bedrock:ap-south-1:269678200989:inference-profile/apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            logger.debug(f"Auto-set model_id for Claude 3.5 Sonnet v2: {params['model_id']}")
+        elif "anthropic.claude-3-5-haiku-20241022-v1:0" in model_name:
+            # Claude 3.5 Haiku inference profile ARN
+            params["model_id"] = "arn:aws:bedrock:ap-south-1:269678200989:inference-profile/apac.anthropic.claude-3-5-haiku-20241022-v1:0"
+            logger.debug(f"Auto-set model_id for Claude 3.5 Haiku: {params['model_id']}")
+        elif model_id:
+            # Use the provided model_id if none of the above models match
+            params["model_id"] = model_id
+            logger.info(f"🔍 DEBUGGING - Using provided model_id: {model_id}")
+        else:
+            logger.warning(f"🔍 DEBUGGING - No inference profile match and no model_id provided for: {model_name}")
 
-    # Apply Anthropic prompt caching (minimal implementation)
+    # Apply Anthropic prompt caching for Claude models (ONLY for direct Anthropic API, NOT Bedrock)
     # Check model name *after* potential modifications (like adding bedrock/ prefix)
     effective_model_name = params.get("model", model_name) # Use model from params if set, else original
-    if "claude" in effective_model_name.lower() or "anthropic" in effective_model_name.lower():
+    is_claude = "claude" in effective_model_name.lower() or "anthropic" in effective_model_name.lower()
+    is_bedrock = effective_model_name.startswith("bedrock/")
+    
+    if is_claude and not is_bedrock:
+        # Only apply prompt caching for direct Anthropic API calls, not Bedrock
+        logger.debug("Applying prompt caching for direct Anthropic API")
         messages = params["messages"] # Direct reference, modification affects params
 
         # Ensure messages is a list
@@ -223,16 +253,21 @@ def prepare_params(
         apply_cache_control(last_user_idx, "last user")
         apply_cache_control(second_last_user_idx, "second last user")
         apply_cache_control(last_assistant_idx, "last assistant")
+    elif is_claude and is_bedrock:
+        logger.debug("Skipping prompt caching for Bedrock Claude models (not supported)")
 
-    # Add reasoning_effort for Anthropic models if enabled
+    # Add reasoning_effort for Claude models if enabled (works with both direct API and Bedrock)
     use_thinking = enable_thinking if enable_thinking is not None else False
-    is_anthropic = "anthropic" in effective_model_name.lower() or "claude" in effective_model_name.lower()
+    is_claude = "anthropic" in effective_model_name.lower() or "claude" in effective_model_name.lower()
 
-    if is_anthropic and use_thinking:
+    if is_claude and use_thinking and not effective_model_name.startswith("bedrock/"):
+        # Note: reasoning_effort is only supported for direct Anthropic API, not Bedrock
         effort_level = reasoning_effort if reasoning_effort else 'low'
         params["reasoning_effort"] = effort_level
         params["temperature"] = 1.0 # Required by Anthropic when reasoning_effort is used
-        logger.info(f"Anthropic thinking enabled with reasoning_effort='{effort_level}'")
+        logger.info(f"Claude thinking enabled with reasoning_effort='{effort_level}' (direct API only)")
+    elif is_claude and use_thinking and effective_model_name.startswith("bedrock/"):
+        logger.warning("Thinking mode not supported for Bedrock Claude models, continuing without reasoning_effort")
 
     return params
 
@@ -377,13 +412,12 @@ async def test_bedrock():
     ]
 
     try:
+        # Test with Claude 3.5 Haiku using inference profile
         response = await make_llm_api_call(
-            model_name="bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
-            model_id="arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            model_name="bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
             messages=test_messages,
             temperature=0.7,
-            # Claude 3.7 has issues with max_tokens, so omit it
-            # max_tokens=100
+            max_tokens=100
         )
         print(f"Response: {response.choices[0].message.content}")
         print(f"Model used: {response.model}")
@@ -391,6 +425,7 @@ async def test_bedrock():
         return True
     except Exception as e:
         print(f"Error testing Bedrock: {str(e)}")
+        logger.warning(f"Bedrock test failed - this may be due to AWS permissions or model availability. Error: {str(e)}")
         return False
 
 if __name__ == "__main__":

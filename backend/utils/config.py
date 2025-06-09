@@ -109,7 +109,7 @@ class Configuration:
         return self.STRIPE_TIER_200_1000_ID_PROD
     
     # LLM API keys
-    ANTHROPIC_API_KEY: str = None
+    # ANTHROPIC_API_KEY: str = None  # Removed - using Bedrock exclusively
     OPENAI_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
@@ -123,7 +123,7 @@ class Configuration:
     AWS_REGION_NAME: Optional[str] = None
     
     # Model configuration
-    MODEL_TO_USE: Optional[str] = "anthropic/claude-3-7-sonnet-latest"
+    MODEL_TO_USE: Optional[str] = "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"
     
     # Supabase configuration
     SUPABASE_URL: str
