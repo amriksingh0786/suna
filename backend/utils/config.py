@@ -161,8 +161,10 @@ class Configuration:
     # Sandbox configuration
     #SANDBOX_IMAGE_NAME = "kortix/suna:0.1.2.8"
     #SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
-    SANDBOX_IMAGE_NAME = "amriksinghkhalsa/atlas-ai:v1.1"
-    SANDBOX_ENTRYPOINT = ""
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3"
+    SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
+    #SANDBOX_IMAGE_NAME = "amriksinghkhalsa/atlas-ai:v1.1"
+   # SANDBOX_ENTRYPOINT = ""
 
     # LangFuse configuration
     LANGFUSE_PUBLIC_KEY: Optional[str] = None

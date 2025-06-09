@@ -31,8 +31,8 @@ class ComputerUseTool(SandboxToolsBase):
         self.session = None
         self.mouse_x = 0  # Track current mouse position
         self.mouse_y = 0
-        # Get automation service URL using port 8000
-        self.api_base_url = self.sandbox.get_preview_link(8000)
+        # Get automation service URL using port 8001
+        self.api_base_url = self.sandbox.get_preview_link(8001)
         logging.info(f"Initialized Computer Use Tool with API URL: {self.api_base_url}")
     
     async def _get_session(self) -> aiohttp.ClientSession:
