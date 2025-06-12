@@ -44,6 +44,9 @@ class InitiateAgentResponse(BaseModel):
     thread_id: str
     agent_run_id: Optional[str] = None
 
+class ProjectUpdateRequest(BaseModel):
+    name: str
+
 def initialize(
     _db: DBConnection,
     _instance_id: str = None
@@ -1028,6 +1031,69 @@ async def get_project(project_id: str, user_id: str = Depends(get_current_user_i
     except Exception as e:
         logger.error(f"Error fetching project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch project: {str(e)}")
+
+@router.patch("/project/{project_id}")
+async def update_project(
+    project_id: str, 
+    request: ProjectUpdateRequest,
+    user_id: str = Depends(get_current_user_id_from_jwt)
+):
+    """Update project details (supports X-app tokens)."""
+    logger.info(f"Updating project: {project_id} with name: {request.name}")
+    client = await db.client
+    
+    try:
+        # First verify the project exists and user has access
+        project_result = await client.table('projects').select('*').eq('project_id', project_id).single().execute()
+        
+        if not project_result.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project = project_result.data
+        
+        # Check if project is public or if user has access
+        if not project.get('is_public'):
+            account_id = project.get('account_id')
+            if account_id:
+                # Special case for x-api users: if the user_id matches the account_id directly,
+                # they have access (this handles x-api users who own their own projects)
+                if user_id != account_id:
+                    # Check basejump account membership for regular users
+                    account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
+                    if not (account_user_result.data and len(account_user_result.data) > 0):
+                        raise HTTPException(status_code=403, detail="Not authorized to access this project")
+
+        # Update the project name
+        update_result = await client.table('projects').update({
+            "name": request.name,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }).eq("project_id", project_id).execute()
+        
+        if not update_result.data:
+            raise HTTPException(status_code=400, detail="Failed to update project")
+        
+        updated_project = update_result.data[0]
+        
+        # Map to consistent format
+        mapped_project = {
+            "id": updated_project['project_id'],
+            "name": updated_project.get('name', ''),
+            "description": updated_project.get('description', ''),
+            "account_id": updated_project['account_id'],
+            "created_at": updated_project['created_at'],
+            "updated_at": updated_project.get('updated_at'),
+            "sandbox": updated_project.get('sandbox', {}),
+            "is_public": updated_project.get('is_public', False)
+        }
+        
+        logger.info(f"Successfully updated project {project_id} name to '{request.name}'")
+        return mapped_project
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update project: {str(e)}")
 
 @router.get("/thread/{thread_id}")
 async def get_thread(thread_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
